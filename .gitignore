@@ -1,0 +1,14 @@
+node_modules/
+dist/
+coverage/
+*.vsix
+*.log
+.DS_Store
+.playwright-cli/
+.vscode-test/
+.loglogin
+test/integration/workspace/*.npy
+test/integration/workspace/*.tif
+test/integration/workspace/*.tiff
+workspace/
+AGENTS.md

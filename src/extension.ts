@@ -1,0 +1,372 @@
+import * as vscode from "vscode";
+import type {
+  HostToWebviewMessage,
+  ScientificImageDataSource,
+  ViewerCommand,
+  WebviewToHostMessage,
+} from "./shared/types";
+import { NpyImageDataSource } from "./host/npyDataSource";
+import { RequestScheduler } from "./host/scheduler";
+import { TiffImageDataSource } from "./host/tiffDataSource";
+
+const VIEW_TYPE = "scientificImageViewer.viewer";
+
+class ScientificImageDocument implements vscode.CustomDocument {
+  private constructor(
+    readonly uri: vscode.Uri,
+    readonly dataSource?: ScientificImageDataSource,
+    readonly openError?: unknown,
+  ) {}
+
+  static async create(uri: vscode.Uri): Promise<ScientificImageDocument> {
+    const cacheMB = vscode.workspace
+      .getConfiguration("scientificImageViewer")
+      .get<number>("remoteCacheMB", 512);
+    const cacheBytes = cacheMB * 1024 * 1024;
+    const extension = uri.path.toLowerCase();
+    try {
+      const dataSource = extension.endsWith(".npy")
+        ? await NpyImageDataSource.create(uri, cacheBytes)
+        : extension.endsWith(".tif") || extension.endsWith(".tiff")
+          ? await TiffImageDataSource.create(uri, cacheBytes)
+          : undefined;
+      if (!dataSource) throw new Error(`Unsupported scientific image extension for ${uri.path}.`);
+      return new ScientificImageDocument(uri, dataSource);
+    } catch (error) {
+      return new ScientificImageDocument(uri, undefined, error);
+    }
+  }
+
+  dispose(): void {
+    void this.dataSource?.dispose();
+  }
+}
+
+class ScientificImageEditorProvider
+  implements vscode.CustomReadonlyEditorProvider<ScientificImageDocument>
+{
+  readonly #panels = new Set<vscode.WebviewPanel>();
+  readonly #scheduler = new RequestScheduler(4);
+  readonly #computeScheduler = new RequestScheduler(1);
+  #activePanel?: vscode.WebviewPanel;
+
+  constructor(readonly context: vscode.ExtensionContext) {}
+
+  openCustomDocument(
+    uri: vscode.Uri,
+    _openContext: vscode.CustomDocumentOpenContext,
+    _token: vscode.CancellationToken,
+  ): Promise<ScientificImageDocument> {
+    return ScientificImageDocument.create(uri);
+  }
+
+  async resolveCustomEditor(
+    document: ScientificImageDocument,
+    webviewPanel: vscode.WebviewPanel,
+    _token: vscode.CancellationToken,
+  ): Promise<void> {
+    this.#panels.add(webviewPanel);
+    if (webviewPanel.active) this.#activePanel = webviewPanel;
+    const webview = webviewPanel.webview;
+    webview.options = {
+      enableScripts: true,
+      localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, "dist")],
+    };
+    webview.html = this.getHtml(webview);
+    let disposed = false;
+    let latestHistogramRequest = 0;
+    let latestStatisticsRequest = 0;
+    webviewPanel.onDidChangeViewState(() => {
+      if (webviewPanel.active) this.#activePanel = webviewPanel;
+    });
+    webviewPanel.onDidDispose(() => {
+      disposed = true;
+      this.#panels.delete(webviewPanel);
+      if (this.#activePanel === webviewPanel) {
+        this.#activePanel = [...this.#panels].find((panel) => panel.active);
+      }
+    });
+
+    webview.onDidReceiveMessage((raw: unknown) => {
+      if (!isWebviewMessage(raw)) {
+        void this.post(webview, { type: "error", message: "The webview sent an invalid request." });
+        return;
+      }
+      const message = raw;
+      const send = async (response: HostToWebviewMessage): Promise<void> => {
+        if (!disposed) await this.post(webview, response);
+      };
+      const dataSource = document.dataSource;
+      if (!dataSource) {
+        void send(errorMessage(document.openError ?? new Error("The image could not be opened.")));
+        return;
+      }
+      switch (message.type) {
+        case "ready":
+          void this.#scheduler
+            .enqueue(0, () => dataSource.getMetadata())
+            .then((metadata) => {
+              const configuration = vscode.workspace.getConfiguration("scientificImageViewer");
+              return send({
+                type: "metadata",
+                metadata,
+                settings: {
+                  localCacheMB: configuration.get<number>("localCacheMB", 256),
+                  tileSize: configuration.get<number>("tileSize", 256),
+                },
+              });
+            })
+            .catch((error) => send(errorMessage(error)));
+          break;
+        case "getOverview":
+          void this.#scheduler
+            .enqueue(0, () => dataSource.getOverview(message.sliceIndex))
+            .then((tile) =>
+              send({
+                type: "overview",
+                tile: {
+                  ...tile,
+                  requestId: message.requestId,
+                  generation: message.generation,
+                },
+              }),
+            )
+            .catch((error) => send(errorMessage(error, message.requestId)));
+          break;
+        case "getTiles": {
+          if (message.requests.length > 128) {
+            void send({ type: "error", message: "A tile batch may contain at most 128 requests." });
+            break;
+          }
+          for (const request of message.requests) {
+            const priority = request.priority === "immediate" ? 0 : request.priority === "visible" ? 1 : 4;
+            void this.#scheduler
+              .enqueue(priority, () => dataSource.getTile(request))
+              .then((tile) => send({ type: "tile", tile }))
+              .catch((error) => send(errorMessage(error, request.requestId)));
+          }
+          break;
+        }
+        case "computeHistogram":
+          latestHistogramRequest = message.request.requestId;
+          void this.#computeScheduler
+            .enqueue(0, () => {
+              if (message.request.requestId !== latestHistogramRequest) {
+                throw new SupersededRequestError();
+              }
+              return dataSource.computeHistogram(message.request);
+            })
+            .then((result) => send({ type: "histogram", result }))
+            .catch((error) =>
+              error instanceof SupersededRequestError
+                ? undefined
+                : send(errorMessage(error, message.request.requestId)),
+            );
+          break;
+        case "computeStatistics":
+          latestStatisticsRequest = message.request.requestId;
+          void this.#computeScheduler
+            .enqueue(0, () => {
+              if (message.request.requestId !== latestStatisticsRequest) {
+                throw new SupersededRequestError();
+              }
+              return dataSource.computeStatistics(message.request);
+            })
+            .then((result) => send({ type: "statistics", result }))
+            .catch((error) =>
+              error instanceof SupersededRequestError
+                ? undefined
+                : send(errorMessage(error, message.request.requestId)),
+            );
+          break;
+        case "samplePixel":
+          void this.#scheduler
+            .enqueue(0, () => dataSource.samplePixel(message.request))
+            .then((result) => send({ type: "sample", result }))
+            .catch((error) => send(errorMessage(error, message.request.requestId)));
+          break;
+      }
+    });
+  }
+
+  execute(command: ViewerCommand): void {
+    if (this.#activePanel && this.#panels.has(this.#activePanel)) {
+      void this.post(this.#activePanel.webview, { type: "command", command });
+    }
+  }
+
+  private post(webview: vscode.Webview, message: HostToWebviewMessage): Thenable<boolean> {
+    return webview.postMessage(message);
+  }
+
+  private getHtml(webview: vscode.Webview): string {
+    const scriptUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.context.extensionUri, "dist", "webview.js"),
+    );
+    const styleUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.context.extensionUri, "dist", "webview.css"),
+    );
+    const nonce = createNonce();
+    return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data:; style-src ${webview.cspSource}; style-src-attr 'unsafe-inline'; script-src 'nonce-${nonce}'; worker-src blob:;">
+    <link rel="stylesheet" href="${styleUri}">
+    <title>Scientific Image Viewer</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script nonce="${nonce}" src="${scriptUri}"></script>
+  </body>
+</html>`;
+  }
+}
+
+class SupersededRequestError extends Error {}
+
+function isWebviewMessage(value: unknown): value is WebviewToHostMessage {
+  if (!isRecord(value) || typeof value.type !== "string") return false;
+  switch (value.type) {
+    case "ready":
+      return true;
+    case "getOverview":
+      return integer(value.sliceIndex) && integer(value.generation) && integer(value.requestId);
+    case "getTiles":
+      return Array.isArray(value.requests) && value.requests.every(isTileRequest);
+    case "computeHistogram":
+      return isRecord(value.request) &&
+        integer(value.request.requestId) &&
+        integer(value.request.sliceIndex) &&
+        finiteNumber(value.request.binCount) &&
+        typeof value.request.approximateAllowed === "boolean" &&
+        optionalSelection(value.request.selection) &&
+        optionalComplexMode(value.request.complexMode);
+    case "computeStatistics":
+      return isRecord(value.request) &&
+        integer(value.request.requestId) &&
+        integer(value.request.sliceIndex) &&
+        optionalSelection(value.request.selection) &&
+        optionalComplexMode(value.request.complexMode);
+    case "samplePixel":
+      return isRecord(value.request) &&
+        integer(value.request.requestId) &&
+        integer(value.request.sliceIndex) &&
+        finiteNumber(value.request.x) &&
+        finiteNumber(value.request.y);
+    default:
+      return false;
+  }
+}
+
+function isTileRequest(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  return (
+    integer(value.requestId) &&
+    integer(value.generation) &&
+    integer(value.sliceIndex) &&
+    integer(value.level) &&
+    finiteNumber(value.x) &&
+    finiteNumber(value.y) &&
+    finiteNumber(value.width) &&
+    finiteNumber(value.height) &&
+    (value.priority === "immediate" || value.priority === "visible" || value.priority === "prefetch")
+  );
+}
+
+function optionalSelection(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (!isRecord(value) || typeof value.type !== "string") return false;
+  switch (value.type) {
+    case "rectangle":
+      return finiteNumbers(value, ["x0", "y0", "x1", "y1"]);
+    case "ellipse":
+      return finiteNumbers(value, ["centerX", "centerY", "radiusX", "radiusY"]);
+    case "line":
+      return finiteNumbers(value, ["x0", "y0", "x1", "y1", "widthPixels"]);
+    case "polygon":
+      return Array.isArray(value.vertices) &&
+        value.vertices.length >= 3 &&
+        value.vertices.length <= 10_000 &&
+        value.vertices.every((vertex) =>
+          isRecord(vertex) && finiteNumber(vertex.x) && finiteNumber(vertex.y),
+        );
+    default:
+      return false;
+  }
+}
+
+function optionalComplexMode(value: unknown): boolean {
+  return value === undefined ||
+    value === "magnitude" ||
+    value === "phase" ||
+    value === "real" ||
+    value === "imaginary" ||
+    value === "logMagnitude" ||
+    value === "magnitudeSquared";
+}
+
+function finiteNumbers(value: Record<string, unknown>, fields: string[]): boolean {
+  return fields.every((field) => finiteNumber(value[field]));
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object";
+}
+
+function finiteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function integer(value: unknown): value is number {
+  return finiteNumber(value) && Number.isInteger(value);
+}
+
+function errorMessage(error: unknown, requestId?: number): HostToWebviewMessage {
+  const message = error instanceof Error ? error.message : String(error);
+  const details = error instanceof Error ? error.stack : undefined;
+  return { type: "error", requestId, message, details };
+}
+
+function createNonce(): string {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  return Array.from(
+    { length: 32 },
+    () => alphabet[Math.floor(Math.random() * alphabet.length)]!,
+  ).join("");
+}
+
+export function activate(context: vscode.ExtensionContext): void {
+  const provider = new ScientificImageEditorProvider(context);
+  context.subscriptions.push(
+    vscode.window.registerCustomEditorProvider(VIEW_TYPE, provider, {
+      webviewOptions: { retainContextWhenHidden: true },
+      supportsMultipleEditorsPerDocument: true,
+    }),
+  );
+
+  const commands: Record<string, ViewerCommand> = {
+    "scientificImageViewer.tool.rectangle": "tool.rectangle",
+    "scientificImageViewer.tool.ellipse": "tool.ellipse",
+    "scientificImageViewer.tool.line": "tool.line",
+    "scientificImageViewer.tool.polygon": "tool.polygon",
+    "scientificImageViewer.tool.sampler": "tool.sampler",
+    "scientificImageViewer.computeStatistics": "computeStatistics",
+    "scientificImageViewer.tool.magnifier": "tool.magnifier",
+    "scientificImageViewer.tool.pan": "tool.pan",
+    "scientificImageViewer.autoContrast": "autoContrast",
+    "scientificImageViewer.clearSelection": "clearSelection",
+    "scientificImageViewer.fitToWindow": "fitToWindow",
+    "scientificImageViewer.actualPixels": "actualPixels",
+    "scientificImageViewer.zoomIn": "zoomIn",
+    "scientificImageViewer.zoomOut": "zoomOut",
+    "scientificImageViewer.nextSlice": "nextSlice",
+    "scientificImageViewer.previousSlice": "previousSlice",
+  };
+  for (const [identifier, command] of Object.entries(commands)) {
+    context.subscriptions.push(vscode.commands.registerCommand(identifier, () => provider.execute(command)));
+  }
+}
+
+export function deactivate(): void {}

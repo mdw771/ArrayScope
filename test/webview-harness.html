@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="../dist/webview.css">
+  <style>
+    :root {
+      --vscode-font-family: system-ui; --vscode-font-size: 13px;
+      --vscode-foreground: #cccccc; --vscode-descriptionForeground: #999999;
+      --vscode-editor-background: #1e1e1e; --vscode-sideBar-background: #252526;
+      --vscode-editorGroupHeader-tabsBackground: #252526; --vscode-panel-border: #444444;
+      --vscode-sideBarSectionHeader-background: #333333; --vscode-toolbar-hoverBackground: #444444;
+      --vscode-button-background: #0e639c; --vscode-button-hoverBackground: #1177bb;
+      --vscode-button-foreground: white; --vscode-input-background: #3c3c3c;
+      --vscode-input-foreground: #cccccc; --vscode-focusBorder: #007fd4;
+      --vscode-badge-background: #4d4d4d; --vscode-badge-foreground: white;
+      --vscode-editorHoverWidget-background: #252526; --vscode-editorHoverWidget-foreground: #cccccc;
+      --vscode-widget-border: #555555; --vscode-widget-shadow: #0008;
+      --vscode-charts-blue: #3794ff; --vscode-editor-font-family: monospace;
+      --vscode-inputValidation-errorBorder: #be1100; --vscode-inputValidation-errorBackground: #5a1d1d;
+      --vscode-inputValidation-errorForeground: white; --vscode-textCodeBlock-background: #111111;
+    }
+  </style>
+  <title>ArrayScope Webview Harness</title>
+</head>
+<body>
+  <div id="root"></div>
+  <script>
+    const values = new Float32Array([
+      0, 1, 2, 3,
+      4, 5, 6, 7,
+      8, 9, 10, 11,
+      12, 13, 14, 15,
+    ]);
+    let savedState;
+    window.acquireVsCodeApi = () => ({
+      getState: () => savedState,
+      setState: value => { savedState = value; },
+      postMessage: message => {
+        if (message.type === "ready") {
+          respond({
+            type: "metadata",
+            settings: { localCacheMB: 32, tileSize: 256 },
+            metadata: {
+              uri: "file:///fixture.npy", fileName: "fixture.npy", format: "npy",
+              shape: [4, 4], width: 4, height: 4, sliceCount: 1, dtype: "float32",
+              byteOrder: "little", fortranOrder: false, fileSizeBytes: 128,
+              totalElementCount: 16, isComplex: false,
+              additionalMetadata: { dimensionality: "image", npyVersion: "1.0" },
+            },
+          });
+        } else if (message.type === "getOverview") {
+          respond({ type: "overview", tile: tileFor(message.requestId, message.generation, message.sliceIndex, 0, 0, 4, 4) });
+        } else if (message.type === "getTiles") {
+          for (const request of message.requests) {
+            respond({ type: "tile", tile: tileFor(request.requestId, request.generation, request.sliceIndex, request.x, request.y, request.width, request.height, request.level) });
+          }
+        } else if (message.type === "computeHistogram") {
+          respond({ type: "histogram", result: {
+            requestId: message.request.requestId, sliceIndex: 0, scope: message.request.selection ? "selection" : "full-slice",
+            binEdges: [0, 4, 8, 12, 16], counts: [4, 4, 4, 4], finiteCount: 16,
+            nanCount: 0, positiveInfinityCount: 0, negativeInfinityCount: 0,
+            percentile1: 0.15, percentile99: 14.85, minimum: 0, maximum: 15, approximate: false,
+          }});
+        } else if (message.type === "computeStatistics") {
+          respond({ type: "statistics", result: {
+            requestId: message.request.requestId, sliceIndex: 0, scope: "full-slice",
+            geometricPixelCount: 16, finitePixelCount: 16, nanCount: 0,
+            positiveInfinityCount: 0, negativeInfinityCount: 0, mean: 7.5,
+            minimum: 0, maximum: 15, median: 7.5, standardDeviation: 4.609772,
+            variance: 21.25, kurtosis: 1.790588, approximateMedian: false,
+          }});
+        } else if (message.type === "samplePixel") {
+          const { x, y, requestId, sliceIndex } = message.request;
+          respond({ type: "sample", result: { requestId, sliceIndex, x, y, value: values[y * 4 + x] }});
+        }
+      },
+    });
+    function respond(message) { setTimeout(() => window.postMessage(message, "*"), 0); }
+    function tileFor(requestId, generation, sliceIndex, x, y, width, height, level = 0) {
+      const factor = 2 ** level;
+      const data = new Float32Array(width * height);
+      for (let oy = 0; oy < height; oy++) for (let ox = 0; ox < width; ox++) {
+        data[oy * width + ox] = values[(y + oy) * factor * 4 + (x + ox) * factor] ?? 0;
+      }
+      return { requestId, generation, sliceIndex, level, x, y, width, height, dtype: "float32", data: data.buffer };
+    }
+  </script>
+  <script src="../dist/webview.js"></script>
+</body>
+</html>
