@@ -47,7 +47,7 @@
     "customEditors": [
       {
         "viewType": "scientificImageViewer.viewer",
-        "displayName": "Scientific Image Viewer",
+        "displayName": "ArrayScope Scientific Image Viewer",
         "selector": [
           { "filenamePattern": "*.npy" },
           { "filenamePattern": "*.tif" },
@@ -57,22 +57,22 @@
       }
     ],
     "commands": [
-      { "command": "scientificImageViewer.tool.rectangle", "title": "Scientific Image Viewer: Rectangle Selection" },
-      { "command": "scientificImageViewer.tool.ellipse", "title": "Scientific Image Viewer: Ellipse Selection" },
-      { "command": "scientificImageViewer.tool.line", "title": "Scientific Image Viewer: Line Selection" },
-      { "command": "scientificImageViewer.tool.polygon", "title": "Scientific Image Viewer: Polygon Selection" },
-      { "command": "scientificImageViewer.tool.sampler", "title": "Scientific Image Viewer: Sampler" },
-      { "command": "scientificImageViewer.computeStatistics", "title": "Scientific Image Viewer: Calculate Statistics" },
-      { "command": "scientificImageViewer.tool.magnifier", "title": "Scientific Image Viewer: Magnifier" },
-      { "command": "scientificImageViewer.tool.pan", "title": "Scientific Image Viewer: Pan" },
-      { "command": "scientificImageViewer.autoContrast", "title": "Scientific Image Viewer: Auto Contrast" },
-      { "command": "scientificImageViewer.clearSelection", "title": "Scientific Image Viewer: Clear Selection" },
-      { "command": "scientificImageViewer.fitToWindow", "title": "Scientific Image Viewer: Fit to Window" },
-      { "command": "scientificImageViewer.actualPixels", "title": "Scientific Image Viewer: Actual Pixels" },
-      { "command": "scientificImageViewer.zoomIn", "title": "Scientific Image Viewer: Zoom In" },
-      { "command": "scientificImageViewer.zoomOut", "title": "Scientific Image Viewer: Zoom Out" },
-      { "command": "scientificImageViewer.nextSlice", "title": "Scientific Image Viewer: Next Slice" },
-      { "command": "scientificImageViewer.previousSlice", "title": "Scientific Image Viewer: Previous Slice" }
+      { "command": "scientificImageViewer.tool.rectangle", "title": "ArrayScope Scientific Image Viewer: Rectangle Selection" },
+      { "command": "scientificImageViewer.tool.ellipse", "title": "ArrayScope Scientific Image Viewer: Ellipse Selection" },
+      { "command": "scientificImageViewer.tool.line", "title": "ArrayScope Scientific Image Viewer: Line Selection" },
+      { "command": "scientificImageViewer.tool.polygon", "title": "ArrayScope Scientific Image Viewer: Polygon Selection" },
+      { "command": "scientificImageViewer.tool.sampler", "title": "ArrayScope Scientific Image Viewer: Sampler" },
+      { "command": "scientificImageViewer.computeStatistics", "title": "ArrayScope Scientific Image Viewer: Calculate Statistics" },
+      { "command": "scientificImageViewer.tool.magnifier", "title": "ArrayScope Scientific Image Viewer: Magnifier" },
+      { "command": "scientificImageViewer.tool.pan", "title": "ArrayScope Scientific Image Viewer: Pan" },
+      { "command": "scientificImageViewer.autoContrast", "title": "ArrayScope Scientific Image Viewer: Auto Contrast" },
+      { "command": "scientificImageViewer.clearSelection", "title": "ArrayScope Scientific Image Viewer: Clear Selection" },
+      { "command": "scientificImageViewer.fitToWindow", "title": "ArrayScope Scientific Image Viewer: Fit to Window" },
+      { "command": "scientificImageViewer.actualPixels", "title": "ArrayScope Scientific Image Viewer: Actual Pixels" },
+      { "command": "scientificImageViewer.zoomIn", "title": "ArrayScope Scientific Image Viewer: Zoom In" },
+      { "command": "scientificImageViewer.zoomOut", "title": "ArrayScope Scientific Image Viewer: Zoom Out" },
+      { "command": "scientificImageViewer.nextSlice", "title": "ArrayScope Scientific Image Viewer: Next Slice" },
+      { "command": "scientificImageViewer.previousSlice", "title": "ArrayScope Scientific Image Viewer: Previous Slice" }
     ],
     "keybindings": [
       { "command": "scientificImageViewer.tool.rectangle", "key": "r", "when": "activeCustomEditorId == scientificImageViewer.viewer" },
@@ -90,7 +90,7 @@
       { "command": "scientificImageViewer.previousSlice", "key": "[", "when": "activeCustomEditorId == scientificImageViewer.viewer" }
     ],
     "configuration": {
-      "title": "Scientific Image Viewer",
+      "title": "ArrayScope Scientific Image Viewer",
       "properties": {
         "scientificImageViewer.localCacheMB": {
           "type": "number",

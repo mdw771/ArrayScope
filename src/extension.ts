@@ -214,7 +214,7 @@ class ScientificImageEditorProvider
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data:; style-src ${webview.cspSource}; style-src-attr 'unsafe-inline'; script-src 'nonce-${nonce}'; worker-src blob:;">
     <link rel="stylesheet" href="${styleUri}">
-    <title>Scientific Image Viewer</title>
+    <title>ArrayScope Scientific Image Viewer</title>
   </head>
   <body>
     <div id="root"></div>
