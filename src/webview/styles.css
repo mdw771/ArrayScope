@@ -62,6 +62,8 @@ input, select {
 .viewport.tool-magnifier { cursor: zoom-in; }
 .viewport.tool-sampler { cursor: crosshair; }
 .viewport.tool-rectangle, .viewport.tool-ellipse, .viewport.tool-line, .viewport.tool-polygon { cursor: crosshair; }
+.viewport[data-temporary-pan="true"] { cursor: grab; }
+.viewport[data-temporary-pan="true"]:active { cursor: grabbing; }
 .image-canvas, .overlay { position: absolute; inset: 0; width: 100%; height: 100%; }
 .overlay { pointer-events: none; }
 .overlay svg rect, .overlay svg ellipse, .overlay svg line, .overlay svg polygon, .overlay svg polyline {

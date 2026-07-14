@@ -24,6 +24,29 @@ The viewer never writes to the source. A selection scopes histogram, auto contra
 
 Complex images always show synchronized Magnitude and Phase panels. The **Analysis transform** selector controls which representation is used by the histogram, auto contrast, and statistics.
 
+## Keyboard shortcuts
+
+These shortcuts are active while an ArrayScope editor is active. They are disabled when a text input or terminal has focus, so they do not interfere with typing elsewhere in VS Code.
+
+| Shortcut | Action |
+| --- | --- |
+| `R` | Rectangle selection |
+| `E` | Ellipse selection |
+| `L` | Line selection |
+| `P` | Polygon selection |
+| `I` | Sample a pixel |
+| `Z` | Magnifier tool |
+| `H` | Pan tool |
+| `Space` + drag | Pan temporarily without changing tools |
+| `-` | Zoom out |
+| `=` | Zoom in |
+| `F` | Fit image to window |
+| `1` | Show actual pixels (1:1) |
+| `[` | Previous slice |
+| `]` | Next slice |
+| `Ctrl+Alt+Shift+S` (`Cmd+Alt+Shift+S` on macOS) | Calculate statistics |
+| `Ctrl+Alt+Backspace` (`Cmd+Alt+Backspace` on macOS) | Clear selection |
+
 ## Remote workspaces
 
 The extension declares itself as a workspace extension. Under Remote SSH, WSL, and dev containers:

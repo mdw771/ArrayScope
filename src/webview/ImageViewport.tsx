@@ -24,6 +24,7 @@ export function ImageViewport({ mode }: { mode: ComplexDisplayMode | "scalar" })
   const wrapperRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<DragState | undefined>(undefined);
   const fittedUriRef = useRef<string | undefined>(undefined);
+  const spaceHeldRef = useRef(false);
   const state = useViewerStore();
   const metadata = state.metadata;
 
@@ -55,6 +56,30 @@ export function ImageViewport({ mode }: { mode: ComplexDisplayMode | "scalar" })
     return () => window.clearTimeout(timer);
   }, [state.currentSlice, state.zoom, state.panX, state.panY, state.viewportWidth, state.viewportHeight]);
 
+  useEffect(() => {
+    const setSpaceHeld = (held: boolean): void => {
+      spaceHeldRef.current = held;
+      if (wrapperRef.current) wrapperRef.current.dataset.temporaryPan = String(held);
+    };
+    const onWindowKeyDown = (event: globalThis.KeyboardEvent): void => {
+      if (event.code !== "Space" || isInteractiveTarget(event.target)) return;
+      event.preventDefault();
+      setSpaceHeld(true);
+    };
+    const onWindowKeyUp = (event: globalThis.KeyboardEvent): void => {
+      if (event.code === "Space") setSpaceHeld(false);
+    };
+    const onWindowBlur = (): void => setSpaceHeld(false);
+    window.addEventListener("keydown", onWindowKeyDown);
+    window.addEventListener("keyup", onWindowKeyUp);
+    window.addEventListener("blur", onWindowBlur);
+    return () => {
+      window.removeEventListener("keydown", onWindowKeyDown);
+      window.removeEventListener("keyup", onWindowKeyUp);
+      window.removeEventListener("blur", onWindowBlur);
+    };
+  }, []);
+
   if (!metadata) return <div className="viewport loading">Loading metadata…</div>;
 
   const transform = { zoom: state.zoom, panX: state.panX, panY: state.panY };
@@ -75,7 +100,7 @@ export function ImageViewport({ mode }: { mode: ComplexDisplayMode | "scalar" })
   const onPointerDown = (event: PointerEvent<HTMLDivElement>): void => {
     wrapperRef.current?.focus();
     const point = localPoint(event);
-    const temporaryPan = event.currentTarget.dataset.spaceHeld === "true";
+    const temporaryPan = spaceHeldRef.current;
     const kind = temporaryPan || state.activeTool === "pan"
       ? "pan"
       : state.activeTool === "magnifier"
@@ -140,7 +165,6 @@ export function ImageViewport({ mode }: { mode: ComplexDisplayMode | "scalar" })
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
-    if (event.key === " ") event.currentTarget.dataset.spaceHeld = "true";
     if (event.key === "Escape") {
       if (state.draftPolygon || state.draftSelection) {
         dragRef.current = undefined;
@@ -210,14 +234,17 @@ export function ImageViewport({ mode }: { mode: ComplexDisplayMode | "scalar" })
         onContextMenu={(event) => event.preventDefault()}
         onWheel={onWheel}
         onKeyDown={onKeyDown}
-        onKeyUp={(event) => {
-          if (event.key === " ") event.currentTarget.dataset.spaceHeld = "false";
-        }}
       >
         <WebGLImage mode={mode} />
         <SelectionOverlay mode={mode} />
       </div>
     </div>
+  );
+}
+
+function isInteractiveTarget(target: EventTarget | null): boolean {
+  return target instanceof Element && Boolean(
+    target.closest("button, input, select, textarea, [contenteditable]:not([contenteditable='false'])"),
   );
 }
 

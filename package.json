@@ -82,6 +82,8 @@
       { "command": "scientificImageViewer.tool.sampler", "key": "i", "when": "activeCustomEditorId == scientificImageViewer.viewer && !inputFocus && !terminalFocus" },
       { "command": "scientificImageViewer.computeStatistics", "key": "ctrl+alt+shift+s", "mac": "cmd+alt+shift+s", "when": "activeCustomEditorId == scientificImageViewer.viewer && !inputFocus && !terminalFocus" },
       { "command": "scientificImageViewer.tool.magnifier", "key": "z", "when": "activeCustomEditorId == scientificImageViewer.viewer && !inputFocus && !terminalFocus" },
+      { "command": "scientificImageViewer.zoomOut", "key": "-", "when": "activeCustomEditorId == scientificImageViewer.viewer && !inputFocus && !terminalFocus" },
+      { "command": "scientificImageViewer.zoomIn", "key": "=", "when": "activeCustomEditorId == scientificImageViewer.viewer && !inputFocus && !terminalFocus" },
       { "command": "scientificImageViewer.tool.pan", "key": "h", "when": "activeCustomEditorId == scientificImageViewer.viewer && !inputFocus && !terminalFocus" },
       { "command": "scientificImageViewer.clearSelection", "key": "ctrl+alt+backspace", "mac": "cmd+alt+backspace", "when": "activeCustomEditorId == scientificImageViewer.viewer && !inputFocus && !terminalFocus" },
       { "command": "scientificImageViewer.fitToWindow", "key": "f", "when": "activeCustomEditorId == scientificImageViewer.viewer && !inputFocus && !terminalFocus" },
