@@ -92,6 +92,43 @@ describe("no-selection analysis behavior", () => {
     expect(store.useViewerStore.getState().autoContrastPending).toBe(true);
     expect(posted.at(-1)?.type).toBe("computeHistogram");
   });
+
+  it("treats a pixel-empty selection gesture as clearing the selection", () => {
+    store.useViewerStore.setState({
+      selection: { type: "rectangle", x0: 1, y0: 1, x1: 5, y1: 5 },
+      histogram: { ...fullSliceHistogram, scope: "selection" },
+      histogramStale: false,
+    });
+
+    controller.commitSelection({ type: "rectangle", x0: 3, y0: 3, x1: 3, y1: 3 });
+
+    expect(store.useViewerStore.getState().selection).toBeUndefined();
+    expect(posted.at(-1)).toMatchObject({
+      type: "computeHistogram",
+      request: { selection: undefined },
+    });
+  });
+
+  it("keeps the current range when cached histogram bounds are non-finite", () => {
+    store.useViewerStore.setState({
+      histogram: {
+        ...fullSliceHistogram,
+        finiteCount: 0,
+        percentile1: Number.NaN,
+        percentile99: Number.NaN,
+        minimum: Number.NaN,
+        maximum: Number.NaN,
+      },
+      histogramStale: false,
+      ranges: { scalar: [0, 10] },
+    });
+
+    controller.autoContrast();
+
+    expect(store.useViewerStore.getState().ranges.scalar).toEqual([0, 10]);
+    expect(store.useViewerStore.getState().autoContrastPending).toBe(true);
+    expect(posted.at(-1)?.type).toBe("computeHistogram");
+  });
 });
 
 const metadata: ImageMetadata = {

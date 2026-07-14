@@ -1,5 +1,5 @@
 import type { ViewerTool } from "../shared/types";
-import { autoContrast, executeViewerCommand, requestHistogram, requestStatistics } from "./controller";
+import { autoContrast, commitSelection, executeViewerCommand, requestStatistics } from "./controller";
 import { useViewerStore } from "./store";
 
 const tools: Array<{ tool: ViewerTool; icon: string; label: string; command: string }> = [
@@ -37,7 +37,7 @@ export function Toolbar() {
       <div className="tool-separator" />
       <button className="tool-button compact" title="Fit to window (scientificImageViewer.fitToWindow)" aria-label="Fit to window" onClick={() => executeViewerCommand("fitToWindow")}>Fit</button>
       <button className="tool-button compact" title="Actual pixels (scientificImageViewer.actualPixels)" aria-label="Actual pixels" onClick={() => executeViewerCommand("actualPixels")}>1:1</button>
-      <button className="tool-button compact" title="Clear selection (scientificImageViewer.clearSelection)" aria-label="Clear selection" onClick={() => { useViewerStore.getState().setSelection(undefined); requestHistogram(); }}>Clear</button>
+      <button className="tool-button compact" title="Clear selection (scientificImageViewer.clearSelection)" aria-label="Clear selection" onClick={() => commitSelection()}>Clear</button>
       <button className="tool-button compact" title="Auto Contrast (scientificImageViewer.autoContrast)" aria-label="Auto contrast" onClick={autoContrast}>Auto</button>
       <div className="zoom-readout">{formatZoom(useViewerStore((state) => state.zoom))}</div>
     </header>

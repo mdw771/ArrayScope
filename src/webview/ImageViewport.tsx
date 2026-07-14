@@ -2,8 +2,8 @@ import { useEffect, useRef, type KeyboardEvent, type PointerEvent, type WheelEve
 import { clampImagePoint, imageToScreen, screenToImage } from "../shared/geometry";
 import type { ComplexDisplayMode, Selection } from "../shared/types";
 import {
+  commitSelection,
   fitToWindow,
-  requestHistogram,
   requestVisibleTiles,
   samplePixel,
   zoomAbout,
@@ -123,9 +123,8 @@ export function ImageViewport({ mode }: { mode: ComplexDisplayMode | "scalar" })
     if (!drag) return;
     const point = localPoint(event);
     dragRef.current = undefined;
-    if (drag.kind === "selection" && state.draftSelection) {
-      state.setSelection(state.draftSelection);
-      requestHistogram();
+    if (drag.kind === "selection") {
+      commitSelection(selectionFromDrag(state.activeTool, drag.startImage, point.image, event));
     } else if (drag.kind === "sampler") {
       samplePixel(point.image.x, point.image.y);
     } else if (drag.kind === "magnifier") {
@@ -144,8 +143,11 @@ export function ImageViewport({ mode }: { mode: ComplexDisplayMode | "scalar" })
     if (event.key === " ") event.currentTarget.dataset.spaceHeld = "true";
     if (event.key === "Escape") {
       if (state.draftPolygon || state.draftSelection) {
+        dragRef.current = undefined;
         state.setDraftPolygon(undefined);
         state.setDraftSelection(undefined);
+      } else if (state.selection) {
+        commitSelection();
       }
     } else if (event.key === "Enter" && state.draftPolygon) {
       closePolygon();
@@ -155,8 +157,7 @@ export function ImageViewport({ mode }: { mode: ComplexDisplayMode | "scalar" })
       state.setDraftPolygon(vertices.length > 0 ? { vertices } : undefined);
     } else if ((event.key === "Delete" || event.key === "Backspace") && state.selection) {
       event.preventDefault();
-      state.setSelection(undefined);
-      requestHistogram();
+      commitSelection();
     }
   };
 
@@ -175,8 +176,7 @@ export function ImageViewport({ mode }: { mode: ComplexDisplayMode | "scalar" })
   const closePolygon = (): void => {
     const polygon = useViewerStore.getState().draftPolygon;
     if (!polygon || polygon.vertices.length < 3) return;
-    state.setSelection({ type: "polygon", vertices: polygon.vertices });
-    requestHistogram();
+    commitSelection({ type: "polygon", vertices: polygon.vertices });
   };
 
   return (

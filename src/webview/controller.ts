@@ -3,8 +3,10 @@ import type {
   HostToWebviewMessage,
   ImageTileRequest,
   SamplePixelResult,
+  Selection,
   ViewerCommand,
 } from "../shared/types";
+import { SelectionRasterizer } from "../shared/geometry";
 import { postMessage } from "./api";
 import { stableRange, useViewerStore } from "./store";
 import { sampleTile, tileCache } from "./tileCache";
@@ -66,12 +68,16 @@ function handleHostMessage(message: HostToWebviewMessage): void {
       }
       state.setHistogram(message.result);
       if (state.autoContrastPending) {
-        const mode = state.metadata?.isComplex ? state.complexMode : "scalar";
-        state.setRange(mode, stableRange(message.result.percentile1, message.result.percentile99));
+        if (hasFiniteRange(message.result.percentile1, message.result.percentile99)) {
+          const mode = state.metadata?.isComplex ? state.complexMode : "scalar";
+          state.setRange(mode, stableRange(message.result.percentile1, message.result.percentile99));
+        }
         state.setAutoContrastPending(false);
       } else if (state.resetRangePending) {
-        const mode = state.metadata?.isComplex ? state.complexMode : "scalar";
-        state.setRange(mode, stableRange(message.result.minimum, message.result.maximum));
+        if (hasFiniteRange(message.result.minimum, message.result.maximum)) {
+          const mode = state.metadata?.isComplex ? state.complexMode : "scalar";
+          state.setRange(mode, stableRange(message.result.minimum, message.result.maximum));
+        }
         state.setResetRangePending(false);
       }
       break;
@@ -154,6 +160,16 @@ export function requestStatistics(): void {
   });
 }
 
+export function commitSelection(selection?: Selection): void {
+  const state = useViewerStore.getState();
+  const metadata = state.metadata;
+  const committed = metadata && selectionContainsPixels(metadata.width, metadata.height, selection)
+    ? selection
+    : undefined;
+  state.setSelection(committed);
+  requestHistogram();
+}
+
 export function autoContrast(): void {
   const state = useViewerStore.getState();
   const mode = state.metadata?.isComplex ? state.complexMode : "scalar";
@@ -162,7 +178,8 @@ export function autoContrast(): void {
     !state.histogramStale &&
     state.histogram.sliceIndex === state.currentSlice &&
     state.histogram.scope === (state.selection ? "selection" : "full-slice") &&
-    (!state.metadata?.isComplex || state.histogram.complexMode === state.complexMode)
+    (!state.metadata?.isComplex || state.histogram.complexMode === state.complexMode) &&
+    hasFiniteRange(state.histogram.percentile1, state.histogram.percentile99)
   ) {
     state.setRange(mode, stableRange(state.histogram.percentile1, state.histogram.percentile99));
     return;
@@ -180,7 +197,8 @@ export function resetDynamicRange(): void {
     !state.histogramStale &&
     state.histogram.sliceIndex === state.currentSlice &&
     state.histogram.scope === (state.selection ? "selection" : "full-slice") &&
-    (!state.metadata?.isComplex || state.histogram.complexMode === state.complexMode)
+    (!state.metadata?.isComplex || state.histogram.complexMode === state.complexMode) &&
+    hasFiniteRange(state.histogram.minimum, state.histogram.maximum)
   ) {
     state.setRange(mode, stableRange(state.histogram.minimum, state.histogram.maximum));
     return;
@@ -298,8 +316,7 @@ export function executeViewerCommand(command: ViewerCommand): void {
       autoContrast();
       break;
     case "clearSelection":
-      state.setSelection(undefined);
-      requestHistogram();
+      commitSelection();
       break;
     case "fitToWindow":
       fitToWindow();
@@ -320,6 +337,20 @@ export function executeViewerCommand(command: ViewerCommand): void {
       changeSlice(state.currentSlice - 1);
       break;
   }
+}
+
+function selectionContainsPixels(width: number, height: number, selection?: Selection): boolean {
+  if (!selection) return false;
+  const rasterizer = new SelectionRasterizer(width, height, selection);
+  const [startY, endY] = rasterizer.rows();
+  for (let y = startY; y <= endY; y += 1) {
+    if (rasterizer.runsForRow(y).length > 0) return true;
+  }
+  return false;
+}
+
+function hasFiniteRange(lower: number, upper: number): boolean {
+  return Number.isFinite(lower) && Number.isFinite(upper);
 }
 
 export function changeSlice(slice: number): void {
