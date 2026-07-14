@@ -75,19 +75,19 @@
       { "command": "scientificImageViewer.previousSlice", "title": "ArrayScope Scientific Image Viewer: Previous Slice" }
     ],
     "keybindings": [
-      { "command": "scientificImageViewer.tool.rectangle", "key": "r", "when": "activeCustomEditorId == scientificImageViewer.viewer" },
-      { "command": "scientificImageViewer.tool.ellipse", "key": "e", "when": "activeCustomEditorId == scientificImageViewer.viewer" },
-      { "command": "scientificImageViewer.tool.line", "key": "l", "when": "activeCustomEditorId == scientificImageViewer.viewer" },
-      { "command": "scientificImageViewer.tool.polygon", "key": "p", "when": "activeCustomEditorId == scientificImageViewer.viewer" },
-      { "command": "scientificImageViewer.tool.sampler", "key": "i", "when": "activeCustomEditorId == scientificImageViewer.viewer" },
-      { "command": "scientificImageViewer.computeStatistics", "key": "ctrl+alt+shift+s", "mac": "cmd+alt+shift+s", "when": "activeCustomEditorId == scientificImageViewer.viewer" },
-      { "command": "scientificImageViewer.tool.magnifier", "key": "z", "when": "activeCustomEditorId == scientificImageViewer.viewer" },
-      { "command": "scientificImageViewer.tool.pan", "key": "h", "when": "activeCustomEditorId == scientificImageViewer.viewer" },
-      { "command": "scientificImageViewer.clearSelection", "key": "ctrl+alt+backspace", "mac": "cmd+alt+backspace", "when": "activeCustomEditorId == scientificImageViewer.viewer" },
-      { "command": "scientificImageViewer.fitToWindow", "key": "f", "when": "activeCustomEditorId == scientificImageViewer.viewer" },
-      { "command": "scientificImageViewer.actualPixels", "key": "1", "when": "activeCustomEditorId == scientificImageViewer.viewer" },
-      { "command": "scientificImageViewer.nextSlice", "key": "]", "when": "activeCustomEditorId == scientificImageViewer.viewer" },
-      { "command": "scientificImageViewer.previousSlice", "key": "[", "when": "activeCustomEditorId == scientificImageViewer.viewer" }
+      { "command": "scientificImageViewer.tool.rectangle", "key": "r", "when": "activeCustomEditorId == scientificImageViewer.viewer && !inputFocus && !terminalFocus" },
+      { "command": "scientificImageViewer.tool.ellipse", "key": "e", "when": "activeCustomEditorId == scientificImageViewer.viewer && !inputFocus && !terminalFocus" },
+      { "command": "scientificImageViewer.tool.line", "key": "l", "when": "activeCustomEditorId == scientificImageViewer.viewer && !inputFocus && !terminalFocus" },
+      { "command": "scientificImageViewer.tool.polygon", "key": "p", "when": "activeCustomEditorId == scientificImageViewer.viewer && !inputFocus && !terminalFocus" },
+      { "command": "scientificImageViewer.tool.sampler", "key": "i", "when": "activeCustomEditorId == scientificImageViewer.viewer && !inputFocus && !terminalFocus" },
+      { "command": "scientificImageViewer.computeStatistics", "key": "ctrl+alt+shift+s", "mac": "cmd+alt+shift+s", "when": "activeCustomEditorId == scientificImageViewer.viewer && !inputFocus && !terminalFocus" },
+      { "command": "scientificImageViewer.tool.magnifier", "key": "z", "when": "activeCustomEditorId == scientificImageViewer.viewer && !inputFocus && !terminalFocus" },
+      { "command": "scientificImageViewer.tool.pan", "key": "h", "when": "activeCustomEditorId == scientificImageViewer.viewer && !inputFocus && !terminalFocus" },
+      { "command": "scientificImageViewer.clearSelection", "key": "ctrl+alt+backspace", "mac": "cmd+alt+backspace", "when": "activeCustomEditorId == scientificImageViewer.viewer && !inputFocus && !terminalFocus" },
+      { "command": "scientificImageViewer.fitToWindow", "key": "f", "when": "activeCustomEditorId == scientificImageViewer.viewer && !inputFocus && !terminalFocus" },
+      { "command": "scientificImageViewer.actualPixels", "key": "1", "when": "activeCustomEditorId == scientificImageViewer.viewer && !inputFocus && !terminalFocus" },
+      { "command": "scientificImageViewer.nextSlice", "key": "]", "when": "activeCustomEditorId == scientificImageViewer.viewer && !inputFocus && !terminalFocus" },
+      { "command": "scientificImageViewer.previousSlice", "key": "[", "when": "activeCustomEditorId == scientificImageViewer.viewer && !inputFocus && !terminalFocus" }
     ],
     "configuration": {
       "title": "ArrayScope Scientific Image Viewer",
