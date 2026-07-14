@@ -4,6 +4,7 @@
   "description": "Read-only, progressive scientific image viewer for NPY and TIFF files.",
   "version": "0.1.0",
   "publisher": "arrayscope",
+  "icon": "images/icon.png",
   "license": "MIT",
   "engines": {
     "vscode": "^1.100.0"
@@ -28,6 +29,7 @@
   ],
   "files": [
     "dist",
+    "images",
     "README.md",
     "CHANGELOG.md",
     "LICENSE",
