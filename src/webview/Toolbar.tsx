@@ -2,14 +2,14 @@ import type { ViewerTool } from "../shared/types";
 import { autoContrast, commitSelection, executeViewerCommand, requestStatistics } from "./controller";
 import { useViewerStore } from "./store";
 
-const tools: Array<{ tool: ViewerTool; icon: string; label: string; command: string }> = [
-  { tool: "rectangle", icon: "▭", label: "Rectangle selection", command: "scientificImageViewer.tool.rectangle" },
-  { tool: "ellipse", icon: "◯", label: "Ellipse selection", command: "scientificImageViewer.tool.ellipse" },
-  { tool: "line", icon: "╱", label: "Line selection", command: "scientificImageViewer.tool.line" },
-  { tool: "polygon", icon: "⬠", label: "Polygon selection", command: "scientificImageViewer.tool.polygon" },
-  { tool: "sampler", icon: "⌖", label: "Sampler", command: "scientificImageViewer.tool.sampler" },
-  { tool: "magnifier", icon: "⌕", label: "Magnifier", command: "scientificImageViewer.tool.magnifier" },
-  { tool: "pan", icon: "✋", label: "Pan", command: "scientificImageViewer.tool.pan" },
+const tools: Array<{ tool: ViewerTool; label: string; command: string }> = [
+  { tool: "rectangle", label: "Rectangle selection", command: "scientificImageViewer.tool.rectangle" },
+  { tool: "ellipse", label: "Ellipse selection", command: "scientificImageViewer.tool.ellipse" },
+  { tool: "line", label: "Line selection", command: "scientificImageViewer.tool.line" },
+  { tool: "polygon", label: "Polygon selection", command: "scientificImageViewer.tool.polygon" },
+  { tool: "sampler", label: "Sampler", command: "scientificImageViewer.tool.sampler" },
+  { tool: "magnifier", label: "Magnifier", command: "scientificImageViewer.tool.magnifier" },
+  { tool: "pan", label: "Pan", command: "scientificImageViewer.tool.pan" },
 ];
 
 export function Toolbar() {
@@ -27,7 +27,7 @@ export function Toolbar() {
         title="Calculate Statistics (scientificImageViewer.computeStatistics)"
         aria-label="Calculate statistics"
         onClick={requestStatistics}
-      ><span aria-hidden="true">∑</span><span>Stats</span></button>
+      ><ToolbarIcon name="statistics" /><span>Stats</span></button>
       <div className="tool-separator" />
       <div className="tool-group">
         {tools.slice(5).map((item) => (
@@ -46,13 +46,11 @@ export function Toolbar() {
 
 function ToolButton({
   tool,
-  icon,
   label,
   command,
   active,
 }: {
   tool: ViewerTool;
-  icon: string;
   label: string;
   command: string;
   active: boolean;
@@ -65,8 +63,43 @@ function ToolButton({
       aria-pressed={active}
       onClick={() => useViewerStore.getState().setTool(tool)}
     >
-      <span className="tool-icon" aria-hidden="true">{icon}</span>
+      <ToolbarIcon name={tool} />
     </button>
+  );
+}
+
+function ToolbarIcon({ name }: { name: ViewerTool | "statistics" }) {
+  return (
+    <span className="tool-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" focusable="false">
+        {name === "rectangle" && <rect x="4" y="4" width="16" height="16" rx="0.75" />}
+        {name === "ellipse" && <circle cx="12" cy="12" r="8" />}
+        {name === "line" && <path d="M5 19 19 5" />}
+        {name === "polygon" && <path d="m12 3.5 8.5 6.25L17.25 20H6.75L3.5 9.75 12 3.5Z" />}
+        {name === "sampler" && (
+          <>
+            <circle cx="12" cy="12" r="5.5" />
+            <path d="M12 2.75v4M12 17.25v4M2.75 12h4M17.25 12h4" />
+          </>
+        )}
+        {name === "magnifier" && (
+          <>
+            <circle cx="10.5" cy="10.5" r="6.75" />
+            <path d="m15.5 15.5 5 5" />
+          </>
+        )}
+        {name === "pan" && (
+          <>
+            {/* Adapted from Tabler Icons' hand-stop icon (MIT). */}
+            <path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V12" />
+            <path d="M11 5.5v-2a1.5 1.5 0 1 1 3 0V12" />
+            <path d="M14 5.5a1.5 1.5 0 0 1 3 0V12" />
+            <path d="M17 7.5a1.5 1.5 0 0 1 3 0V16a6 6 0 0 1-6 6h-1.8a6 6 0 0 1-5-2.7L3.7 13.27a1.5 1.5 0 0 1 .55-2.02 1.87 1.87 0 0 1 2.28.28L8 13" />
+          </>
+        )}
+        {name === "statistics" && <path d="M18.5 4H5.5l7 8-7 8h13" />}
+      </svg>
+    </span>
   );
 }
 
