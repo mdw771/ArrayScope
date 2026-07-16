@@ -306,7 +306,9 @@ export function requestVisibleTiles(): void {
       const height = Math.min(tileSize, levelHeight - y);
       const key = `${state.currentSlice}:${level}:${x}:${y}:${width}:${height}`;
       const query = { sliceIndex: state.currentSlice, level, x, y, width, height };
-      if (tileCache.has(query) || pendingTileKeys.has(key)) continue;
+      if (tileCache.covers(query, metadata.width, metadata.height) || pendingTileKeys.has(key)) {
+        continue;
+      }
       const id = nextRequestId();
       pendingTileKeys.add(key);
       pendingTiles.set(id, key);

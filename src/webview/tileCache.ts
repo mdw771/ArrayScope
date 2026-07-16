@@ -5,7 +5,9 @@ function keyFor(tile: Pick<ImageTile, "sliceIndex" | "level" | "x" | "y" | "widt
   return `${tile.sliceIndex}:${tile.level}:${tile.x}:${tile.y}:${tile.width}:${tile.height}`;
 }
 
-class LocalTileCache {
+type TileRegion = Pick<ImageTile, "sliceIndex" | "level" | "x" | "y" | "width" | "height">;
+
+export class LocalTileCache {
   readonly #tiles = new Map<string, ImageTile>();
   #maximumBytes = 256 * 1024 * 1024;
   #bytes = 0;
@@ -29,8 +31,65 @@ class LocalTileCache {
     return [...this.#tiles.values()].filter((tile) => tile.sliceIndex === sliceIndex);
   }
 
-  has(query: Pick<ImageTile, "sliceIndex" | "level" | "x" | "y" | "width" | "height">): boolean {
+  has(query: TileRegion): boolean {
     return this.#tiles.has(keyFor(query));
+  }
+
+  covers(
+    query: TileRegion,
+    imageWidth = Number.POSITIVE_INFINITY,
+    imageHeight = Number.POSITIVE_INFINITY,
+  ): boolean {
+    const queryRect = sourceRect(query, imageWidth, imageHeight);
+    if (queryRect.right <= queryRect.left || queryRect.bottom <= queryRect.top) return false;
+
+    const candidates = [...this.#tiles.entries()].flatMap(([key, tile]) => {
+      // Lower level numbers contain finer data. A coarser cached tile is useful
+      // as a fallback, but must not suppress a finer visible-tile request.
+      if (tile.sliceIndex !== query.sliceIndex || tile.level > query.level) return [];
+      const rect = sourceRect(tile, imageWidth, imageHeight);
+      const clipped = {
+        left: Math.max(queryRect.left, rect.left),
+        top: Math.max(queryRect.top, rect.top),
+        right: Math.min(queryRect.right, rect.right),
+        bottom: Math.min(queryRect.bottom, rect.bottom),
+      };
+      return clipped.right > clipped.left && clipped.bottom > clipped.top
+        ? [{ key, tile, rect: clipped }]
+        : [];
+    });
+    if (candidates.length === 0) return false;
+
+    const xBoundaries = [...new Set([
+      queryRect.left,
+      queryRect.right,
+      ...candidates.flatMap(({ rect }) => [rect.left, rect.right]),
+    ])].sort((a, b) => a - b);
+
+    for (let index = 0; index + 1 < xBoundaries.length; index += 1) {
+      const left = xBoundaries[index]!;
+      const right = xBoundaries[index + 1]!;
+      if (right <= left) continue;
+      const intervals = candidates
+        .filter(({ rect }) => rect.left <= left && rect.right >= right)
+        .map(({ rect }) => [rect.top, rect.bottom] as const)
+        .sort((a, b) => a[0] - b[0] || b[1] - a[1]);
+      let coveredTo = queryRect.top;
+      for (const [top, bottom] of intervals) {
+        if (top > coveredTo) break;
+        coveredTo = Math.max(coveredTo, bottom);
+        if (coveredTo >= queryRect.bottom) break;
+      }
+      if (coveredTo < queryRect.bottom) return false;
+    }
+
+    // Treat all intersecting contributors as recently used. This keeps the
+    // coverage that suppressed the request from being the next cache eviction.
+    for (const { key, tile } of candidates) {
+      this.#tiles.delete(key);
+      this.#tiles.set(key, tile);
+    }
+    return true;
   }
 
   findExactPixel(sliceIndex: number, x: number, y: number): ImageTile | undefined {
@@ -74,6 +133,16 @@ class LocalTileCache {
 }
 
 export const tileCache = new LocalTileCache();
+
+function sourceRect(tile: TileRegion, imageWidth: number, imageHeight: number) {
+  const factor = 2 ** tile.level;
+  return {
+    left: tile.x * factor,
+    top: tile.y * factor,
+    right: Math.min((tile.x + tile.width) * factor, imageWidth),
+    bottom: Math.min((tile.y + tile.height) * factor, imageHeight),
+  };
+}
 
 export function sampleTile(
   tile: ImageTile,
