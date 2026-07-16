@@ -74,6 +74,7 @@ class ScientificImageEditorProvider
     };
     webview.html = this.getHtml(webview);
     let disposed = false;
+    const requestAbortController = new AbortController();
     let latestHistogramRequest = 0;
     let latestStatisticsRequest = 0;
     webviewPanel.onDidChangeViewState(() => {
@@ -81,6 +82,7 @@ class ScientificImageEditorProvider
     });
     webviewPanel.onDidDispose(() => {
       disposed = true;
+      requestAbortController.abort();
       this.#panels.delete(webviewPanel);
       if (this.#activePanel === webviewPanel) {
         this.#activePanel = [...this.#panels].find((panel) => panel.active);
@@ -104,7 +106,7 @@ class ScientificImageEditorProvider
       switch (message.type) {
         case "ready":
           void this.#scheduler
-            .enqueue(0, () => dataSource.getMetadata())
+            .enqueue(0, () => dataSource.getMetadata(), requestAbortController.signal)
             .then((metadata) => {
               const configuration = vscode.workspace.getConfiguration("scientificImageViewer");
               return send({
@@ -124,7 +126,11 @@ class ScientificImageEditorProvider
           break;
         case "getOverview":
           void this.#scheduler
-            .enqueue(0, () => dataSource.getOverview(message.sliceIndex))
+            .enqueue(
+              0,
+              () => dataSource.getOverview(message.sliceIndex),
+              requestAbortController.signal,
+            )
             .then((tile) =>
               send({
                 type: "overview",
@@ -145,7 +151,7 @@ class ScientificImageEditorProvider
           for (const request of message.requests) {
             const priority = request.priority === "immediate" ? 0 : request.priority === "visible" ? 1 : 4;
             void this.#scheduler
-              .enqueue(priority, () => dataSource.getTile(request))
+              .enqueue(priority, () => dataSource.getTile(request), requestAbortController.signal)
               .then((tile) => send({ type: "tile", tile }))
               .catch((error) => send(errorMessage(error, request.requestId)));
           }
@@ -159,7 +165,7 @@ class ScientificImageEditorProvider
                 throw new SupersededRequestError();
               }
               return dataSource.computeHistogram(message.request);
-            })
+            }, requestAbortController.signal)
             .then((result) => send({ type: "histogram", result }))
             .catch((error) =>
               error instanceof SupersededRequestError
@@ -175,7 +181,7 @@ class ScientificImageEditorProvider
                 throw new SupersededRequestError();
               }
               return dataSource.computeStatistics(message.request);
-            })
+            }, requestAbortController.signal)
             .then((result) => send({ type: "statistics", result }))
             .catch((error) =>
               error instanceof SupersededRequestError
@@ -185,7 +191,11 @@ class ScientificImageEditorProvider
           break;
         case "samplePixel":
           void this.#scheduler
-            .enqueue(0, () => dataSource.samplePixel(message.request))
+            .enqueue(
+              0,
+              () => dataSource.samplePixel(message.request),
+              requestAbortController.signal,
+            )
             .then((result) => send({ type: "sample", result }))
             .catch((error) => send(errorMessage(error, message.request.requestId)));
           break;
