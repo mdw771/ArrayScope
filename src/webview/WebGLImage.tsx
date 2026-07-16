@@ -141,6 +141,7 @@ export function WebGLImage({ mode }: { mode: ComplexDisplayMode | "scalar" }) {
       }
       gl.deleteBuffer(vertices);
       gl.deleteProgram(program);
+      gl.getExtension("WEBGL_lose_context")?.loseContext();
       resourcesRef.current = undefined;
     };
   }, []);

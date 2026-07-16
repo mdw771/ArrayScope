@@ -21,8 +21,15 @@ if (restored && typeof restored === "object") {
   });
 }
 
-initializeController();
-window.addEventListener("beforeunload", () => {
+const disposeController = initializeController();
+const rootElement = document.getElementById("root");
+if (!rootElement) throw new Error("ArrayScope webview root is missing.");
+const reactRoot = createRoot(rootElement);
+let disposed = false;
+
+function disposeWebview(): void {
+  if (disposed) return;
+  disposed = true;
   const state = useViewerStore.getState();
   vscodeApi.setState({
     activeTool: state.activeTool,
@@ -34,8 +41,12 @@ window.addEventListener("beforeunload", () => {
     panY: state.panY,
     ranges: state.ranges,
   });
-});
+  disposeController();
+  reactRoot.unmount();
+  window.removeEventListener("pagehide", disposeWebview);
+  window.removeEventListener("beforeunload", disposeWebview);
+}
 
-const root = document.getElementById("root");
-if (!root) throw new Error("ArrayScope webview root is missing.");
-createRoot(root).render(<StrictMode><App /></StrictMode>);
+window.addEventListener("pagehide", disposeWebview);
+window.addEventListener("beforeunload", disposeWebview);
+reactRoot.render(<StrictMode><App /></StrictMode>);

@@ -3,6 +3,15 @@ import type { ImageTile } from "../src/shared/types";
 import { LocalTileCache } from "../src/webview/tileCache";
 
 describe("local tile cache coverage", () => {
+  it("releases all tiles when cleared", () => {
+    const cache = new LocalTileCache();
+    cache.set(tile({ level: 0, x: 0, y: 0, width: 256, height: 256 }));
+
+    cache.clear();
+
+    expect(cache.values(0)).toEqual([]);
+  });
+
   it("uses a larger same-level overview for contained visible tiles", () => {
     const cache = new LocalTileCache();
     cache.set(tile({ level: 0, x: 0, y: 0, width: 1024, height: 1024 }));

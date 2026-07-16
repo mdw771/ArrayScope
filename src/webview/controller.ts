@@ -29,7 +29,12 @@ export function initializeController(): () => void {
   };
   window.addEventListener("message", listener);
   postMessage({ type: "ready" });
-  return () => window.removeEventListener("message", listener);
+  return () => {
+    window.removeEventListener("message", listener);
+    pendingTiles.clear();
+    pendingTileKeys.clear();
+    tileCache.clear();
+  };
 }
 
 function handleHostMessage(message: HostToWebviewMessage): void {

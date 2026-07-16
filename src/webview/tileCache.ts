@@ -121,6 +121,11 @@ export class LocalTileCache {
     }
   }
 
+  clear(): void {
+    this.#tiles.clear();
+    this.#bytes = 0;
+  }
+
   private evict(): void {
     while (this.#bytes > this.#maximumBytes) {
       const key = this.#tiles.keys().next().value as string | undefined;
