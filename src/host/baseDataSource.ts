@@ -70,6 +70,7 @@ export abstract class BaseImageDataSource implements ScientificImageDataSource {
     outputWidth: number,
     outputHeight: number,
     step: number,
+    signal?: AbortSignal,
   ): Promise<ArrayBuffer>;
 
   protected abstract assertSourceUnchanged(): Promise<void>;
@@ -81,7 +82,8 @@ export abstract class BaseImageDataSource implements ScientificImageDataSource {
     return this.metadata;
   }
 
-  async getOverview(sliceIndex: number): Promise<ImageTile> {
+  async getOverview(sliceIndex: number, signal?: AbortSignal): Promise<ImageTile> {
+    throwIfCancelled(signal);
     const maximumDimension = Math.max(this.metadata.width, this.metadata.height);
     const level = Math.max(0, Math.ceil(Math.log2(Math.max(1, maximumDimension / 1024))));
     const factor = 2 ** level;
@@ -95,13 +97,15 @@ export abstract class BaseImageDataSource implements ScientificImageDataSource {
       width: Math.ceil(this.metadata.width / factor),
       height: Math.ceil(this.metadata.height / factor),
       priority: "immediate",
-    });
+    }, signal);
   }
 
-  async getTile(request: ImageTileRequest): Promise<ImageTile> {
+  async getTile(request: ImageTileRequest, signal?: AbortSignal): Promise<ImageTile> {
+    throwIfCancelled(signal);
     this.assertOpen();
     this.validateSlice(request.sliceIndex);
     await this.assertSourceUnchanged();
+    throwIfCancelled(signal);
     this.assertOpen();
     const level = Math.max(0, Math.floor(request.level));
     const factor = 2 ** level;
@@ -133,7 +137,9 @@ export abstract class BaseImageDataSource implements ScientificImageDataSource {
       width,
       height,
       factor,
+      signal,
     );
+    throwIfCancelled(signal);
     this.assertOpen();
     const tile: ImageTile = {
       requestId: request.requestId,
@@ -151,12 +157,15 @@ export abstract class BaseImageDataSource implements ScientificImageDataSource {
     return tile;
   }
 
-  async samplePixel(request: SamplePixelRequest): Promise<SamplePixelResult> {
+  async samplePixel(request: SamplePixelRequest, signal?: AbortSignal): Promise<SamplePixelResult> {
+    throwIfCancelled(signal);
     this.assertOpen();
     this.validateSlice(request.sliceIndex);
     const x = Math.max(0, Math.min(this.metadata.width - 1, Math.round(request.x)));
     const y = Math.max(0, Math.min(this.metadata.height - 1, Math.round(request.y)));
-    const data = await this.readRegion(request.sliceIndex, x, y, 1, 1, 1);
+    const data = await this.readRegion(request.sliceIndex, x, y, 1, 1, 1, signal);
+    throwIfCancelled(signal);
+    this.assertOpen();
     const decoded = decodeValue(new DataView(data), 0, this.metadata.dtype, true);
     if (decoded.scalar !== undefined) {
       return { ...request, x, y, value: decoded.scalar };
@@ -174,7 +183,8 @@ export abstract class BaseImageDataSource implements ScientificImageDataSource {
     };
   }
 
-  async computeStatistics(request: StatisticsRequest): Promise<StatisticsResult> {
+  async computeStatistics(request: StatisticsRequest, signal?: AbortSignal): Promise<StatisticsResult> {
+    throwIfCancelled(signal);
     this.assertOpen();
     this.validateSlice(request.sliceIndex);
     const reservoir = new Reservoir(500_000);
@@ -196,7 +206,7 @@ export abstract class BaseImageDataSource implements ScientificImageDataSource {
           maximum = Math.max(maximum, value);
         }
       }
-    });
+    }, signal);
 
     const sorted = reservoir.sorted();
     const median = percentile(sorted, 0.5);
@@ -225,7 +235,8 @@ export abstract class BaseImageDataSource implements ScientificImageDataSource {
     };
   }
 
-  async computeHistogram(request: HistogramRequest): Promise<HistogramResult> {
+  async computeHistogram(request: HistogramRequest, signal?: AbortSignal): Promise<HistogramResult> {
+    throwIfCancelled(signal);
     this.assertOpen();
     this.validateSlice(request.sliceIndex);
     const binCount = Math.max(2, Math.min(4096, Math.floor(request.binCount)));
@@ -246,7 +257,7 @@ export abstract class BaseImageDataSource implements ScientificImageDataSource {
           reservoir.add(value);
         }
       }
-    });
+    }, signal);
 
     const sorted = reservoir.sorted();
     const actualMinimum = counts.finite > 0 ? minimum : Number.NaN;
@@ -305,8 +316,11 @@ export abstract class BaseImageDataSource implements ScientificImageDataSource {
     sliceIndex: number,
     selection: StatisticsRequest["selection"],
     callback: (data: ArrayBuffer, pixelCount: number) => Promise<void>,
+    signal?: AbortSignal,
   ): Promise<void> {
     await this.assertSourceUnchanged();
+    throwIfCancelled(signal);
+    this.assertOpen();
     const rasterizer = new SelectionRasterizer(
       this.metadata.width,
       this.metadata.height,
@@ -314,9 +328,13 @@ export abstract class BaseImageDataSource implements ScientificImageDataSource {
     );
     const [startY, endY] = rasterizer.rows();
     for (let y = startY; y <= endY; y += 1) {
+      throwIfCancelled(signal);
       for (const [startX, endX] of rasterizer.runsForRow(y)) {
+        throwIfCancelled(signal);
         const pixelCount = endX - startX + 1;
-        const data = await this.readRegion(sliceIndex, startX, y, pixelCount, 1, 1);
+        const data = await this.readRegion(sliceIndex, startX, y, pixelCount, 1, 1, signal);
+        throwIfCancelled(signal);
+        this.assertOpen();
         if (data.byteLength !== pixelCount * DTYPE_BYTES[this.metadata.dtype]) {
           throw new Error("Decoder returned an unexpected amount of image data.");
         }
@@ -331,9 +349,20 @@ export abstract class BaseImageDataSource implements ScientificImageDataSource {
     }
   }
 
-  private assertOpen(): void {
+  protected assertOpen(): void {
     if (this.#disposed) throw new Error("The image data source is already closed.");
   }
+}
+
+export class DataSourceCancelledError extends Error {
+  constructor() {
+    super("The image operation was cancelled.");
+    this.name = "AbortError";
+  }
+}
+
+export function throwIfCancelled(signal?: AbortSignal): void {
+  if (signal?.aborted) throw new DataSourceCancelledError();
 }
 
 export function updateMoments(moments: RunningMoments, value: number): void {

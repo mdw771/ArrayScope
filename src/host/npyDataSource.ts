@@ -84,7 +84,9 @@ export class NpyImageDataSource extends BaseImageDataSource {
     outputWidth: number,
     outputHeight: number,
     step: number,
+    signal?: AbortSignal,
   ): Promise<ArrayBuffer> {
+    signal?.throwIfAborted();
     const bytesPerElement = this.header.bytesPerElement;
     const output = new Uint8Array(outputWidth * outputHeight * bytesPerElement);
     if (output.byteLength === 0) return output.buffer;
@@ -97,6 +99,7 @@ export class NpyImageDataSource extends BaseImageDataSource {
         outputWidth,
         outputHeight,
         step,
+        signal,
       );
     } else {
       await this.readCRegion(
@@ -107,6 +110,7 @@ export class NpyImageDataSource extends BaseImageDataSource {
         outputWidth,
         outputHeight,
         step,
+        signal,
       );
     }
     const sourceIsLittle =
@@ -124,10 +128,12 @@ export class NpyImageDataSource extends BaseImageDataSource {
     outputWidth: number,
     outputHeight: number,
     step: number,
+    signal?: AbortSignal,
   ): Promise<void> {
     const bytes = this.header.bytesPerElement;
     const spanElements = (outputWidth - 1) * step + 1;
     for (let outputY = 0; outputY < outputHeight; outputY += 1) {
+      signal?.throwIfAborted();
       const sourceRow = sourceY + outputY * step;
       const firstElement = cOrderElementIndex(
         this.header.shape,
@@ -140,6 +146,7 @@ export class NpyImageDataSource extends BaseImageDataSource {
         const row = await this.reader.read(
           this.checkedOffset(firstElement),
           spanElements * bytes,
+          signal,
         );
         if (step === 1) {
           output.set(row, destinationRow);
@@ -153,12 +160,13 @@ export class NpyImageDataSource extends BaseImageDataSource {
           );
         }
       } else if (step === 1) {
-        const row = await this.reader.read(this.checkedOffset(firstElement), outputWidth * bytes);
+        const row = await this.reader.read(this.checkedOffset(firstElement), outputWidth * bytes, signal);
         output.set(row, destinationRow);
       } else {
         for (let outputX = 0; outputX < outputWidth; outputX += 1) {
+          signal?.throwIfAborted();
           const element = firstElement + outputX * step;
-          const value = await this.reader.read(this.checkedOffset(element), bytes);
+          const value = await this.reader.read(this.checkedOffset(element), bytes, signal);
           output.set(
             value,
             destinationRow + outputX * bytes,
@@ -176,11 +184,13 @@ export class NpyImageDataSource extends BaseImageDataSource {
     outputWidth: number,
     outputHeight: number,
     step: number,
+    signal?: AbortSignal,
   ): Promise<void> {
     const bytes = this.header.bytesPerElement;
     const slices = this.header.shape.length === 3 ? this.metadata.sliceCount : 1;
     const yStride = slices;
     for (let outputX = 0; outputX < outputWidth; outputX += 1) {
+      signal?.throwIfAborted();
       const sourceColumn = sourceX + outputX * step;
       const firstElement = fortranOrderElementIndex(
         this.header.shape,
@@ -193,6 +203,7 @@ export class NpyImageDataSource extends BaseImageDataSource {
         const column = await this.reader.read(
           this.checkedOffset(firstElement),
           spanElements * bytes,
+          signal,
         );
         for (let outputY = 0; outputY < outputHeight; outputY += 1) {
           const sourceOffset = outputY * step * yStride * bytes;
@@ -201,8 +212,9 @@ export class NpyImageDataSource extends BaseImageDataSource {
         }
       } else {
         for (let outputY = 0; outputY < outputHeight; outputY += 1) {
+          signal?.throwIfAborted();
           const element = firstElement + outputY * step * yStride;
-          const value = await this.reader.read(this.checkedOffset(element), bytes);
+          const value = await this.reader.read(this.checkedOffset(element), bytes, signal);
           output.set(value, (outputY * outputWidth + outputX) * bytes);
         }
       }

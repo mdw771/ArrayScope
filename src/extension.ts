@@ -6,7 +6,7 @@ import type {
   WebviewToHostMessage,
 } from "./shared/types";
 import { NpyImageDataSource } from "./host/npyDataSource";
-import { RequestScheduler } from "./host/scheduler";
+import { RequestScheduler, ScheduledTaskCancelledError } from "./host/scheduler";
 import { TiffImageDataSource } from "./host/tiffDataSource";
 
 const VIEW_TYPE = "scientificImageViewer.viewer";
@@ -75,6 +75,8 @@ class ScientificImageEditorProvider
     webview.html = this.getHtml(webview);
     let disposed = false;
     const requestAbortController = new AbortController();
+    let histogramAbortController: AbortController | undefined;
+    let statisticsAbortController: AbortController | undefined;
     let latestHistogramRequest = 0;
     let latestStatisticsRequest = 0;
     webviewPanel.onDidChangeViewState(() => {
@@ -83,6 +85,8 @@ class ScientificImageEditorProvider
     webviewPanel.onDidDispose(() => {
       disposed = true;
       requestAbortController.abort();
+      histogramAbortController?.abort();
+      statisticsAbortController?.abort();
       this.#panels.delete(webviewPanel);
       if (this.#activePanel === webviewPanel) {
         this.#activePanel = [...this.#panels].find((panel) => panel.active);
@@ -128,7 +132,7 @@ class ScientificImageEditorProvider
           void this.#scheduler
             .enqueue(
               0,
-              () => dataSource.getOverview(message.sliceIndex),
+              () => dataSource.getOverview(message.sliceIndex, requestAbortController.signal),
               requestAbortController.signal,
             )
             .then((tile) =>
@@ -151,49 +155,71 @@ class ScientificImageEditorProvider
           for (const request of message.requests) {
             const priority = request.priority === "immediate" ? 0 : request.priority === "visible" ? 1 : 4;
             void this.#scheduler
-              .enqueue(priority, () => dataSource.getTile(request), requestAbortController.signal)
+              .enqueue(
+                priority,
+                () => dataSource.getTile(request, requestAbortController.signal),
+                requestAbortController.signal,
+              )
               .then((tile) => send({ type: "tile", tile }))
               .catch((error) => send(errorMessage(error, request.requestId)));
           }
           break;
         }
-        case "computeHistogram":
+        case "computeHistogram": {
+          histogramAbortController?.abort();
+          histogramAbortController = new AbortController();
+          const calculationController = histogramAbortController;
           latestHistogramRequest = message.request.requestId;
           void this.#computeScheduler
             .enqueue(0, () => {
               if (message.request.requestId !== latestHistogramRequest) {
                 throw new SupersededRequestError();
               }
-              return dataSource.computeHistogram(message.request);
-            }, requestAbortController.signal)
+              return dataSource.computeHistogram(message.request, calculationController.signal);
+            }, calculationController.signal)
             .then((result) => send({ type: "histogram", result }))
             .catch((error) =>
-              error instanceof SupersededRequestError
+              error instanceof SupersededRequestError || isCancellationError(error)
                 ? undefined
                 : send(errorMessage(error, message.request.requestId)),
-            );
+            )
+            .finally(() => {
+              if (histogramAbortController === calculationController) {
+                histogramAbortController = undefined;
+              }
+            });
           break;
-        case "computeStatistics":
+        }
+        case "computeStatistics": {
+          statisticsAbortController?.abort();
+          statisticsAbortController = new AbortController();
+          const calculationController = statisticsAbortController;
           latestStatisticsRequest = message.request.requestId;
           void this.#computeScheduler
             .enqueue(0, () => {
               if (message.request.requestId !== latestStatisticsRequest) {
                 throw new SupersededRequestError();
               }
-              return dataSource.computeStatistics(message.request);
-            }, requestAbortController.signal)
+              return dataSource.computeStatistics(message.request, calculationController.signal);
+            }, calculationController.signal)
             .then((result) => send({ type: "statistics", result }))
             .catch((error) =>
-              error instanceof SupersededRequestError
+              error instanceof SupersededRequestError || isCancellationError(error)
                 ? undefined
                 : send(errorMessage(error, message.request.requestId)),
-            );
+            )
+            .finally(() => {
+              if (statisticsAbortController === calculationController) {
+                statisticsAbortController = undefined;
+              }
+            });
           break;
+        }
         case "samplePixel":
           void this.#scheduler
             .enqueue(
               0,
-              () => dataSource.samplePixel(message.request),
+              () => dataSource.samplePixel(message.request, requestAbortController.signal),
               requestAbortController.signal,
             )
             .then((result) => send({ type: "sample", result }))
@@ -239,6 +265,11 @@ class ScientificImageEditorProvider
 }
 
 class SupersededRequestError extends Error {}
+
+function isCancellationError(error: unknown): boolean {
+  return error instanceof ScheduledTaskCancelledError ||
+    (error instanceof Error && error.name === "AbortError");
+}
 
 function isWebviewMessage(value: unknown): value is WebviewToHostMessage {
   if (!isRecord(value) || typeof value.type !== "string") return false;

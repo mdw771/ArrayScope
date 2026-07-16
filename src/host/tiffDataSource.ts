@@ -21,16 +21,18 @@ type GeoTIFFImage = Awaited<ReturnType<GeoTIFF["getImage"]>>;
 
 export class TiffImageDataSource extends BaseImageDataSource {
   readonly #images = new Map<number, GeoTIFFImage>();
+  private tiff?: GeoTIFF;
 
   private constructor(
     metadata: ImageMetadata,
     readonly uri: vscode.Uri,
-    readonly tiff: GeoTIFF,
+    tiff: GeoTIFF,
     readonly initialStat: vscode.FileStat,
     firstImage: GeoTIFFImage,
     remoteCacheBytes: number,
   ) {
     super(metadata, remoteCacheBytes);
+    this.tiff = tiff;
     this.#images.set(0, firstImage);
   }
 
@@ -103,8 +105,10 @@ export class TiffImageDataSource extends BaseImageDataSource {
     outputWidth: number,
     outputHeight: number,
     step: number,
+    signal?: AbortSignal,
   ): Promise<ArrayBuffer> {
-    const image = await this.getCompatibleImage(sliceIndex);
+    signal?.throwIfAborted();
+    const image = await this.getCompatibleImage(sliceIndex, signal);
     const sourceRight = Math.min(this.metadata.width, sourceX + (outputWidth - 1) * step + 1);
     const sourceBottom = Math.min(this.metadata.height, sourceY + (outputHeight - 1) * step + 1);
     let raster: TypedArray;
@@ -116,8 +120,10 @@ export class TiffImageDataSource extends BaseImageDataSource {
         height: outputHeight,
         resampleMethod: "nearest",
         interleave: true,
+        signal,
       });
     } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") throw error;
       throw new Error(
         `TIFF decoder failed for page ${sliceIndex + 1}: ${error instanceof Error ? error.message : String(error)}`,
       );
@@ -125,10 +131,14 @@ export class TiffImageDataSource extends BaseImageDataSource {
     return new Uint8Array(raster.buffer, raster.byteOffset, raster.byteLength).slice().buffer;
   }
 
-  private async getCompatibleImage(index: number): Promise<GeoTIFFImage> {
+  private async getCompatibleImage(index: number, signal?: AbortSignal): Promise<GeoTIFFImage> {
     let image = this.#images.get(index);
     if (!image) {
-      image = await this.tiff.getImage(index);
+      const tiff = this.tiff;
+      if (!tiff) throw new Error("The TIFF data source is already closed.");
+      image = await tiff.getImage(index);
+      signal?.throwIfAborted();
+      this.assertOpen();
       const page = describePage(image);
       if (
         page.width !== this.metadata.width ||
@@ -153,8 +163,10 @@ export class TiffImageDataSource extends BaseImageDataSource {
   }
 
   protected override async closeSource(): Promise<void> {
+    const tiff = this.tiff;
+    this.tiff = undefined;
     this.#images.clear();
-    await Promise.resolve(this.tiff.close());
+    if (tiff) await Promise.resolve(tiff.close());
   }
 }
 

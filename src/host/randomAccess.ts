@@ -8,12 +8,13 @@ export interface FileSnapshot {
 
 export interface RandomAccessReader {
   readonly size: number;
-  read(position: number, length: number): Promise<Uint8Array>;
-  assertUnchanged(): Promise<void>;
+  read(position: number, length: number, signal?: AbortSignal): Promise<Uint8Array>;
+  assertUnchanged(signal?: AbortSignal): Promise<void>;
   dispose(): Promise<void>;
 }
 
 class NodeFileReader implements RandomAccessReader {
+  #disposed = false;
   private constructor(
     readonly uri: vscode.Uri,
     readonly size: number,
@@ -32,27 +33,39 @@ class NodeFileReader implements RandomAccessReader {
     }
   }
 
-  async read(position: number, length: number): Promise<Uint8Array> {
+  async read(position: number, length: number, signal?: AbortSignal): Promise<Uint8Array> {
+    this.assertOpen(signal);
     validateRange(position, length, this.size);
     const output = Buffer.allocUnsafe(length);
     let bytesRead = 0;
     while (bytesRead < length) {
+      this.assertOpen(signal);
       const result = await this.handle.read(output, bytesRead, length - bytesRead, position + bytesRead);
+      this.assertOpen(signal);
       if (result.bytesRead === 0) throw new Error("Unexpected end of file while reading image data.");
       bytesRead += result.bytesRead;
     }
     return new Uint8Array(output.buffer, output.byteOffset, output.byteLength);
   }
 
-  async assertUnchanged(): Promise<void> {
+  async assertUnchanged(signal?: AbortSignal): Promise<void> {
+    this.assertOpen(signal);
     const stat = await this.handle.stat();
+    this.assertOpen(signal);
     if (stat.size !== this.snapshot.size || stat.mtimeMs !== this.snapshot.mtime) {
       throw new Error("The source file changed while it was open. Reopen the editor to reload it safely.");
     }
   }
 
   async dispose(): Promise<void> {
+    if (this.#disposed) return;
+    this.#disposed = true;
     await this.handle.close();
+  }
+
+  private assertOpen(signal?: AbortSignal): void {
+    if (signal?.aborted) throw abortError();
+    if (this.#disposed) throw new Error("The image file reader is already closed.");
   }
 }
 
@@ -61,7 +74,7 @@ class WorkspaceFileReader implements RandomAccessReader {
     readonly uri: vscode.Uri,
     readonly size: number,
     readonly snapshot: FileSnapshot,
-    readonly contents: Uint8Array,
+    private contents?: Uint8Array,
   ) {}
 
   static async create(uri: vscode.Uri): Promise<WorkspaceFileReader> {
@@ -80,19 +93,33 @@ class WorkspaceFileReader implements RandomAccessReader {
     );
   }
 
-  async read(position: number, length: number): Promise<Uint8Array> {
+  async read(position: number, length: number, signal?: AbortSignal): Promise<Uint8Array> {
+    if (signal?.aborted) throw abortError();
     validateRange(position, length, this.size);
+    if (!this.contents) throw new Error("The image file reader is already closed.");
     return this.contents.slice(position, position + length);
   }
 
-  async assertUnchanged(): Promise<void> {
+  async assertUnchanged(signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) throw abortError();
+    if (!this.contents) throw new Error("The image file reader is already closed.");
     const stat = await vscode.workspace.fs.stat(this.uri);
+    if (signal?.aborted) throw abortError();
+    if (!this.contents) throw new Error("The image file reader is already closed.");
     if (stat.size !== this.snapshot.size || stat.mtime !== this.snapshot.mtime) {
       throw new Error("The source file changed while it was open. Reopen the editor to reload it safely.");
     }
   }
 
-  async dispose(): Promise<void> {}
+  async dispose(): Promise<void> {
+    this.contents = undefined;
+  }
+}
+
+function abortError(): Error {
+  const error = new Error("The image file operation was cancelled.");
+  error.name = "AbortError";
+  return error;
 }
 
 function validateRange(position: number, length: number, size: number): void {

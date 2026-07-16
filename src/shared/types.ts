@@ -209,11 +209,11 @@ export type HostToWebviewMessage =
 
 export interface ScientificImageDataSource {
   getMetadata(): Promise<ImageMetadata>;
-  getOverview(sliceIndex: number): Promise<ImageTile>;
-  getTile(request: ImageTileRequest): Promise<ImageTile>;
-  computeHistogram(request: HistogramRequest): Promise<HistogramResult>;
-  computeStatistics(request: StatisticsRequest): Promise<StatisticsResult>;
-  samplePixel(request: SamplePixelRequest): Promise<SamplePixelResult>;
+  getOverview(sliceIndex: number, signal?: AbortSignal): Promise<ImageTile>;
+  getTile(request: ImageTileRequest, signal?: AbortSignal): Promise<ImageTile>;
+  computeHistogram(request: HistogramRequest, signal?: AbortSignal): Promise<HistogramResult>;
+  computeStatistics(request: StatisticsRequest, signal?: AbortSignal): Promise<StatisticsResult>;
+  samplePixel(request: SamplePixelRequest, signal?: AbortSignal): Promise<SamplePixelResult>;
   dispose(): Promise<void>;
 }
 

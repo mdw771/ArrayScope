@@ -139,4 +139,19 @@ describe("format-independent data source calculations", () => {
 
     await expect(tile).rejects.toThrow("already closed");
   });
+
+  it("stops an in-flight calculation when it is cancelled", async () => {
+    const source = new DelayedDataSource();
+    const controller = new AbortController();
+    const histogram = source.computeHistogram({
+      requestId: 7, sliceIndex: 0, binCount: 4, approximateAllowed: true,
+    }, controller.signal);
+    await source.readStarted;
+
+    controller.abort();
+    source.releaseRead();
+
+    await expect(histogram).rejects.toMatchObject({ name: "AbortError" });
+    await source.dispose();
+  });
 });
