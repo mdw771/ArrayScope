@@ -27,6 +27,40 @@ class MemoryDataSource extends BaseImageDataSource {
   protected async closeSource(): Promise<void> {}
 }
 
+class DelayedDataSource extends BaseImageDataSource {
+  readonly readStarted: Promise<void>;
+  readonly #readPending: Promise<void>;
+  #markReadStarted!: () => void;
+  #releaseRead!: () => void;
+
+  constructor() {
+    super({
+      uri: "memory:delayed", fileName: "delayed", format: "npy", shape: [1, 1],
+      width: 1, height: 1, sliceCount: 1, dtype: "float64", byteOrder: "little",
+      fileSizeBytes: 8, totalElementCount: 1, isComplex: false,
+    }, 1024 * 1024);
+    this.readStarted = new Promise<void>((resolve) => {
+      this.#markReadStarted = resolve;
+    });
+    this.#readPending = new Promise<void>((resolve) => {
+      this.#releaseRead = resolve;
+    });
+  }
+
+  releaseRead(): void {
+    this.#releaseRead();
+  }
+
+  protected async readRegion(): Promise<ArrayBuffer> {
+    this.#markReadStarted();
+    await this.#readPending;
+    return new Float64Array([1]).buffer;
+  }
+
+  protected async assertSourceUnchanged(): Promise<void> {}
+  protected async closeSource(): Promise<void> {}
+}
+
 describe("format-independent data source calculations", () => {
   it("uses the entire image when no selection is supplied", async () => {
     const source = new MemoryDataSource([1, 2, 3, 4, 5, 6], 3, 2);
@@ -91,5 +125,18 @@ describe("format-independent data source calculations", () => {
     expect([...new Float64Array(tile.data)]).toEqual([0, 2, 8, 10]);
     await expect(source.samplePixel({ requestId: 5, sliceIndex: 0, x: 2, y: 1 }))
       .resolves.toMatchObject({ value: 6 });
+  });
+
+  it("does not cache a tile whose read finishes after disposal", async () => {
+    const source = new DelayedDataSource();
+    const tile = source.getTile({
+      requestId: 6, generation: 1, sliceIndex: 0, level: 0,
+      x: 0, y: 0, width: 1, height: 1, priority: "visible",
+    });
+    await source.readStarted;
+    await source.dispose();
+    source.releaseRead();
+
+    await expect(tile).rejects.toThrow("already closed");
   });
 });

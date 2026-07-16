@@ -102,6 +102,7 @@ export abstract class BaseImageDataSource implements ScientificImageDataSource {
     this.assertOpen();
     this.validateSlice(request.sliceIndex);
     await this.assertSourceUnchanged();
+    this.assertOpen();
     const level = Math.max(0, Math.floor(request.level));
     const factor = 2 ** level;
     const levelWidth = Math.ceil(this.metadata.width / factor);
@@ -133,6 +134,7 @@ export abstract class BaseImageDataSource implements ScientificImageDataSource {
       height,
       factor,
     );
+    this.assertOpen();
     const tile: ImageTile = {
       requestId: request.requestId,
       generation: request.generation,
