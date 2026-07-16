@@ -1,6 +1,13 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { ComplexDisplayMode } from "../shared/types";
-import { autoContrast, COMPLEX_MODES, requestHistogram, resetDynamicRange } from "./controller";
+import {
+  autoContrast,
+  COMPLEX_MODES,
+  requestAutomaticHistogram,
+  requestHistogram,
+  resetDynamicRange,
+} from "./controller";
+import { exceedsAutomaticHistogramPixelLimit } from "./histogramGate";
 import { DEFAULT_RANGE, stableRange, useViewerStore } from "./store";
 
 const COLORMAPS = [
@@ -104,6 +111,18 @@ function HistogramPanel() {
   const colormap = useViewerStore((state) => state.colormap);
   const mode = metadata?.isComplex ? complexMode : "scalar";
   const range = useViewerStore((state) => state.ranges[mode] ?? DEFAULT_RANGE);
+  const selection = useViewerStore((state) => state.selection);
+  const automaticHistogramPixelLimit = useViewerStore(
+    (state) => state.settings.automaticHistogramPixelLimit,
+  );
+  const automaticCalculationPaused = useMemo(
+    () => metadata !== undefined && exceedsAutomaticHistogramPixelLimit(
+      metadata,
+      selection,
+      automaticHistogramPixelLimit,
+    ),
+    [automaticHistogramPixelLimit, metadata, selection],
+  );
   const bounds: [number, number] = histogram
     ? stableRange(histogram.minimum, histogram.maximum)
     : range;
@@ -123,7 +142,10 @@ function HistogramPanel() {
       <summary>Histogram &amp; Dynamic Range {pending && <span className="spinner" />}</summary>
       {metadata?.isComplex && (
         <label className="control-row"><span>Analysis transform</span>
-          <select value={complexMode} onChange={(event) => { useViewerStore.getState().setComplexMode(event.target.value as ComplexDisplayMode); requestHistogram(); }}>
+          <select value={complexMode} onChange={(event) => {
+            useViewerStore.getState().setComplexMode(event.target.value as ComplexDisplayMode);
+            requestAutomaticHistogram();
+          }}>
             {COMPLEX_MODES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
           </select>
         </label>
@@ -134,10 +156,17 @@ function HistogramPanel() {
         </select>
       </label>
       <div className="histogram-header">
-        <span>{histogram?.scope === "selection" ? "Selection" : "Entire current slice"}</span>
+        <span>{selection ? "Selection" : "Entire current slice"}</span>
         {stale && <span className="stale-badge">Stale</span>}
         {histogram?.approximate && <span className="approx-badge">Approximate</span>}
       </div>
+      {automaticCalculationPaused && (
+        <p className="empty-state">
+          Automatic updates are paused because this scope exceeds the configured limit of{" "}
+          {automaticHistogramPixelLimit.toLocaleString()} pixels. Use Recalculate to update the
+          histogram.
+        </p>
+      )}
       <HistogramChart counts={histogram?.counts ?? []} logarithmic={logCounts} />
       <div className="histogram-axis"><span>{formatNumber(histogram?.minimum)}</span><span>{formatNumber(histogram?.maximum)}</span></div>
       <label className="checkbox-row"><input type="checkbox" checked={logCounts} onChange={(event) => setLogCounts(event.target.checked)} />Log count scale</label>

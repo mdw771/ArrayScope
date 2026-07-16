@@ -41,7 +41,7 @@
         if (message.type === "ready") {
           respond({
             type: "metadata",
-            settings: { localCacheMB: 32, tileSize: 256 },
+            settings: { localCacheMB: 32, tileSize: 256, automaticHistogramPixelLimit: 1000000 },
             metadata: {
               uri: "file:///fixture.npy", fileName: "fixture.npy", format: "npy",
               shape: [4, 4], width: 4, height: 4, sliceCount: 1, dtype: "float32",

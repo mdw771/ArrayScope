@@ -194,6 +194,7 @@ export type WebviewToHostMessage =
 export interface ViewerSettings {
   localCacheMB: number;
   tileSize: number;
+  automaticHistogramPixelLimit: number;
 }
 
 export type HostToWebviewMessage =

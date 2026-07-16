@@ -66,11 +66,13 @@ Remote SSH files normally use a `file` URI on the remote extension host and ther
 {
   "scientificImageViewer.localCacheMB": 256,
   "scientificImageViewer.remoteCacheMB": 512,
-  "scientificImageViewer.tileSize": 256
+  "scientificImageViewer.tileSize": 256,
+  "scientificImageViewer.automaticHistogramPixelLimit": 1000000
 }
 ```
 
 The local limit applies to numeric tiles in each webview. The remote limit applies to decoded tiles held by an open data source.
+Histograms are calculated automatically only when the active scope—the current slice or selection—contains at most `automaticHistogramPixelLimit` pixels. For larger scopes, click **Recalculate** in the histogram panel. Set the limit to `0` to require an explicit calculation for every non-empty scope.
 
 ## Supported data and current boundaries
 

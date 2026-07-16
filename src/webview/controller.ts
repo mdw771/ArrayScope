@@ -8,6 +8,7 @@ import type {
 } from "../shared/types";
 import { SelectionRasterizer } from "../shared/geometry";
 import { postMessage } from "./api";
+import { exceedsAutomaticHistogramPixelLimit } from "./histogramGate";
 import { stableRange, useViewerStore } from "./store";
 import { sampleTile, tileCache } from "./tileCache";
 
@@ -115,7 +116,7 @@ export function requestSliceData(sliceIndex: number): void {
   if (state.metadata && sliceIndex + 1 < state.metadata.sliceCount) {
     requestOverview(sliceIndex + 1, generation);
   }
-  requestHistogram();
+  requestAutomaticHistogram();
   tileCache.clearSliceExcept(sliceIndex);
 }
 
@@ -125,6 +126,28 @@ function requestOverview(sliceIndex: number, generation: number): void {
 }
 
 export function requestHistogram(): void {
+  requestCurrentHistogram();
+}
+
+export function requestAutomaticHistogram(): boolean {
+  const state = useViewerStore.getState();
+  if (!state.metadata || state.metadata.width < 1 || state.metadata.height < 1) return false;
+  if (
+    exceedsAutomaticHistogramPixelLimit(
+      state.metadata,
+      state.selection,
+      state.settings.automaticHistogramPixelLimit,
+    )
+  ) {
+    latestHistogramRequest = nextRequestId();
+    if (state.calculationPending === "histogram") state.markCalculation();
+    return false;
+  }
+  requestCurrentHistogram();
+  return true;
+}
+
+function requestCurrentHistogram(): void {
   const state = useViewerStore.getState();
   if (!state.metadata || state.metadata.width < 1 || state.metadata.height < 1) return;
   const selection = state.selection ?? undefined;
@@ -167,7 +190,7 @@ export function commitSelection(selection?: Selection): void {
     ? selection
     : undefined;
   state.setSelection(committed);
-  requestHistogram();
+  requestAutomaticHistogram();
 }
 
 export function autoContrast(): void {
@@ -185,8 +208,7 @@ export function autoContrast(): void {
     return;
   }
   state.setResetRangePending(false);
-  state.setAutoContrastPending(true);
-  requestHistogram();
+  state.setAutoContrastPending(requestAutomaticHistogram());
 }
 
 export function resetDynamicRange(): void {
@@ -204,8 +226,7 @@ export function resetDynamicRange(): void {
     return;
   }
   state.setAutoContrastPending(false);
-  state.setResetRangePending(true);
-  requestHistogram();
+  state.setResetRangePending(requestAutomaticHistogram());
 }
 
 export function samplePixel(x: number, y: number): void {

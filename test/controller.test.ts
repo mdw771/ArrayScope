@@ -28,6 +28,11 @@ beforeEach(() => {
     autoContrastPending: false,
     resetRangePending: false,
     ranges: { scalar: [0, 10] },
+    settings: {
+      localCacheMB: 256,
+      tileSize: 256,
+      automaticHistogramPixelLimit: 1_000_000,
+    },
   });
 });
 
@@ -128,6 +133,71 @@ describe("no-selection analysis behavior", () => {
     expect(store.useViewerStore.getState().ranges.scalar).toEqual([0, 10]);
     expect(store.useViewerStore.getState().autoContrastPending).toBe(true);
     expect(posted.at(-1)?.type).toBe("computeHistogram");
+  });
+
+  it("skips automatic full-slice histograms above the pixel limit", () => {
+    store.useViewerStore.setState({
+      settings: {
+        localCacheMB: 256,
+        tileSize: 256,
+        automaticHistogramPixelLimit: 99,
+      },
+    });
+
+    const requested = controller.requestAutomaticHistogram();
+
+    expect(requested).toBe(false);
+    expect(posted).toHaveLength(0);
+    expect(store.useViewerStore.getState().calculationPending).toBeUndefined();
+  });
+
+  it("automatically calculates a selection at or below the pixel limit", () => {
+    store.useViewerStore.setState({
+      selection: { type: "rectangle", x0: 0, y0: 0, x1: 5, y1: 2 },
+      settings: {
+        localCacheMB: 256,
+        tileSize: 256,
+        automaticHistogramPixelLimit: 10,
+      },
+    });
+
+    const requested = controller.requestAutomaticHistogram();
+
+    expect(requested).toBe(true);
+    expect(posted.at(-1)).toMatchObject({
+      type: "computeHistogram",
+      request: { selection: store.useViewerStore.getState().selection },
+    });
+  });
+
+  it("skips automatic selection histograms above the pixel limit", () => {
+    store.useViewerStore.setState({
+      settings: {
+        localCacheMB: 256,
+        tileSize: 256,
+        automaticHistogramPixelLimit: 9,
+      },
+    });
+
+    controller.commitSelection({ type: "rectangle", x0: 0, y0: 0, x1: 5, y1: 2 });
+
+    expect(store.useViewerStore.getState().selection).toBeDefined();
+    expect(posted).toHaveLength(0);
+  });
+
+  it("always recalculates explicitly, even above the pixel limit", () => {
+    store.useViewerStore.setState({
+      settings: {
+        localCacheMB: 256,
+        tileSize: 256,
+        automaticHistogramPixelLimit: 0,
+      },
+    });
+
+    controller.requestHistogram();
+
+    expect(posted.at(-1)?.type).toBe("computeHistogram");
+    expect(store.useViewerStore.getState().calculationPending).toBe("histogram");
   });
 });
 

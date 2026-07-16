@@ -68,7 +68,7 @@ export interface ViewerState {
 }
 
 export const useViewerStore = create<ViewerState>((set, get) => ({
-  settings: { localCacheMB: 256, tileSize: 256 },
+  settings: { localCacheMB: 256, tileSize: 256, automaticHistogramPixelLimit: 1_000_000 },
   activeTool: "pan",
   currentSlice: 0,
   zoom: 1,

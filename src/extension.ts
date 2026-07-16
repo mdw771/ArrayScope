@@ -113,6 +113,10 @@ class ScientificImageEditorProvider
                 settings: {
                   localCacheMB: configuration.get<number>("localCacheMB", 256),
                   tileSize: configuration.get<number>("tileSize", 256),
+                  automaticHistogramPixelLimit: configuration.get<number>(
+                    "automaticHistogramPixelLimit",
+                    1_000_000,
+                  ),
                 },
               });
             })
