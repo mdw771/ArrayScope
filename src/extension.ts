@@ -38,7 +38,11 @@ class ScientificImageDocument implements vscode.CustomDocument {
   }
 
   dispose(): void {
-    void this.dataSource?.dispose();
+    const disposal = this.dataSource?.dispose();
+    if (!disposal) return;
+    void disposal.catch((error: unknown) => {
+      console.error(`ArrayScope failed to close ${this.uri.toString()}:`, error);
+    });
   }
 }
 
