@@ -386,7 +386,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const provider = new ScientificImageEditorProvider(context);
   context.subscriptions.push(
     vscode.window.registerCustomEditorProvider(VIEW_TYPE, provider, {
-      webviewOptions: { retainContextWhenHidden: true },
+      webviewOptions: { retainContextWhenHidden: false },
       supportsMultipleEditorsPerDocument: true,
     }),
   );
