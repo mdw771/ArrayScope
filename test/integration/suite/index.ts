@@ -27,7 +27,7 @@ export async function run(): Promise<void> {
 }
 
 async function testCommands(): Promise<void> {
-  const extension = vscode.extensions.getExtension("arrayscope.array-scope");
+  const extension = vscode.extensions.getExtension("amidstars.array-scope");
   assert.ok(extension, "ArrayScope development extension was not discovered.");
   await extension.activate();
   const commands = await vscode.commands.getCommands(true);

@@ -1,5 +1,6 @@
 import { changeSlice } from "./controller";
 import { ImageViewport } from "./ImageViewport";
+import { MenuBar } from "./MenuBar";
 import { SidePanels } from "./SidePanels";
 import { useViewerStore } from "./store";
 import { Toolbar } from "./Toolbar";
@@ -7,14 +8,21 @@ import { Toolbar } from "./Toolbar";
 export function App() {
   const metadata = useViewerStore((state) => state.metadata);
   const error = useViewerStore((state) => state.error);
-  if (!metadata) {
-    return <main className="startup"><div className="large-spinner" /><p>Opening scientific image…</p>{error && <ErrorNotice />}</main>;
-  }
+  return (
+    <main className="app-shell">
+      <MenuBar />
+      {metadata ? <Viewer metadata={metadata} /> : <Startup />}
+      {error && <ErrorNotice />}
+    </main>
+  );
+}
+
+function Viewer({ metadata }: { metadata: NonNullable<ReturnType<typeof useViewerStore.getState>["metadata"]> }) {
   const dimensionality = metadata.additionalMetadata?.dimensionality;
   const scalar = metadata.format === "npy" && dimensionality === "scalar";
   const unsupported = metadata.format === "npy" && typeof dimensionality === "string" && dimensionality.startsWith("unsupported");
   return (
-    <main className="app-shell">
+    <div className="viewer-shell">
       <Toolbar />
       <div className="workspace">
         <section className="viewer-region">
@@ -31,9 +39,12 @@ export function App() {
         </section>
         <SidePanels />
       </div>
-      {error && <ErrorNotice />}
-    </main>
+    </div>
   );
+}
+
+function Startup() {
+  return <section className="startup"><div className="large-spinner" /><p>Opening scientific image…</p></section>;
 }
 
 function StackControls() {

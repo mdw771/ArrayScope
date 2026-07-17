@@ -183,8 +183,17 @@ export type ViewerCommand =
   | "nextSlice"
   | "previousSlice";
 
+export type MenuAction =
+  | "open"
+  | "openInNewTab"
+  | "settings"
+  | "close"
+  | "sourceCode"
+  | "reportIssue";
+
 export type WebviewToHostMessage =
   | { type: "ready" }
+  | { type: "menuAction"; action: MenuAction }
   | { type: "getOverview"; sliceIndex: number; generation: number; requestId: number }
   | { type: "getTiles"; requests: ImageTileRequest[] }
   | { type: "computeHistogram"; request: HistogramRequest }

@@ -2,6 +2,7 @@ import type {
   ComplexDisplayMode,
   HostToWebviewMessage,
   ImageTileRequest,
+  MenuAction,
   SamplePixelResult,
   Selection,
   ViewerCommand,
@@ -186,6 +187,10 @@ export function requestStatistics(): void {
       complexMode: state.metadata.isComplex ? state.complexMode : undefined,
     },
   });
+}
+
+export function requestMenuAction(action: MenuAction): void {
+  postMessage({ type: "menuAction", action });
 }
 
 export function commitSelection(selection?: Selection): void {

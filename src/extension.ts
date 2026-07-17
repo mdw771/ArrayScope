@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import type {
   HostToWebviewMessage,
+  MenuAction,
   ScientificImageDataSource,
   ViewerCommand,
   WebviewToHostMessage,
@@ -10,6 +11,8 @@ import { RequestScheduler, ScheduledTaskCancelledError } from "./host/scheduler"
 import { TiffImageDataSource } from "./host/tiffDataSource";
 
 const VIEW_TYPE = "scientificImageViewer.viewer";
+const SOURCE_CODE_URL = "https://github.com/mdw771/ArrayScope";
+const ISSUE_TRACKER_URL = `${SOURCE_CODE_URL}/issues`;
 
 class ScientificImageDocument implements vscode.CustomDocument {
   private constructor(
@@ -106,6 +109,11 @@ class ScientificImageEditorProvider
       const send = async (response: HostToWebviewMessage): Promise<void> => {
         if (!disposed) await this.post(webview, response);
       };
+      if (message.type === "menuAction") {
+        void this.handleMenuAction(message.action, webviewPanel, document.uri)
+          .catch((error) => send(errorMessage(error)));
+        return;
+      }
       const dataSource = document.dataSource;
       if (!dataSource) {
         void send(errorMessage(document.openError ?? new Error("The image could not be opened.")));
@@ -239,6 +247,65 @@ class ScientificImageEditorProvider
     }
   }
 
+  private async handleMenuAction(
+    action: MenuAction,
+    webviewPanel: vscode.WebviewPanel,
+    documentUri: vscode.Uri,
+  ): Promise<void> {
+    switch (action) {
+      case "open":
+        await this.openImage(webviewPanel, documentUri, true);
+        break;
+      case "openInNewTab":
+        await this.openImage(webviewPanel, documentUri, false);
+        break;
+      case "settings":
+        await vscode.commands.executeCommand(
+          "workbench.action.openSettings",
+          `@ext:${this.context.extension.id}`,
+        );
+        break;
+      case "close":
+        webviewPanel.dispose();
+        break;
+      case "sourceCode":
+        await openExternal(SOURCE_CODE_URL);
+        break;
+      case "reportIssue":
+        await openExternal(ISSUE_TRACKER_URL);
+        break;
+    }
+  }
+
+  private async openImage(
+    webviewPanel: vscode.WebviewPanel,
+    documentUri: vscode.Uri,
+    replaceCurrent: boolean,
+  ): Promise<void> {
+    const selected = await vscode.window.showOpenDialog({
+      title: "Open Scientific Image",
+      openLabel: "Open",
+      defaultUri: vscode.Uri.joinPath(documentUri, ".."),
+      canSelectFiles: true,
+      canSelectFolders: false,
+      canSelectMany: false,
+      filters: { "Scientific images": ["npy", "tif", "tiff"] },
+    });
+    const uri = selected?.[0];
+    if (!uri || (replaceCurrent && uri.toString() === documentUri.toString())) return;
+    await vscode.commands.executeCommand(
+      "vscode.openWith",
+      uri,
+      VIEW_TYPE,
+      {
+        viewColumn: webviewPanel.viewColumn ?? vscode.ViewColumn.Active,
+        preserveFocus: false,
+        preview: false,
+      } satisfies vscode.TextDocumentShowOptions,
+    );
+    if (replaceCurrent) webviewPanel.dispose();
+  }
+
   private post(webview: vscode.Webview, message: HostToWebviewMessage): Thenable<boolean> {
     return webview.postMessage(message);
   }
@@ -280,6 +347,8 @@ function isWebviewMessage(value: unknown): value is WebviewToHostMessage {
   switch (value.type) {
     case "ready":
       return true;
+    case "menuAction":
+      return isMenuAction(value.action);
     case "getOverview":
       return integer(value.sliceIndex) && integer(value.generation) && integer(value.requestId);
     case "getTiles":
@@ -307,6 +376,15 @@ function isWebviewMessage(value: unknown): value is WebviewToHostMessage {
     default:
       return false;
   }
+}
+
+function isMenuAction(value: unknown): value is MenuAction {
+  return value === "open" ||
+    value === "openInNewTab" ||
+    value === "settings" ||
+    value === "close" ||
+    value === "sourceCode" ||
+    value === "reportIssue";
 }
 
 function isTileRequest(value: unknown): boolean {
@@ -384,6 +462,11 @@ function createNonce(): string {
     { length: 32 },
     () => alphabet[Math.floor(Math.random() * alphabet.length)]!,
   ).join("");
+}
+
+async function openExternal(url: string): Promise<void> {
+  const opened = await vscode.env.openExternal(vscode.Uri.parse(url));
+  if (!opened) throw new Error(`VS Code could not open ${url}.`);
 }
 
 export function activate(context: vscode.ExtensionContext): void {

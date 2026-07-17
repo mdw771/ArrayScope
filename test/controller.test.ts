@@ -1,5 +1,10 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import type { HistogramResult, ImageMetadata, WebviewToHostMessage } from "../src/shared/types";
+import type {
+  HistogramResult,
+  ImageMetadata,
+  MenuAction,
+  WebviewToHostMessage,
+} from "../src/shared/types";
 
 const posted: WebviewToHostMessage[] = [];
 let controller: typeof import("../src/webview/controller");
@@ -198,6 +203,37 @@ describe("no-selection analysis behavior", () => {
 
     expect(posted.at(-1)?.type).toBe("computeHistogram");
     expect(store.useViewerStore.getState().calculationPending).toBe("histogram");
+  });
+});
+
+describe("menu behavior", () => {
+  it("sends native host actions to the extension", () => {
+    const actions: MenuAction[] = [
+      "open",
+      "openInNewTab",
+      "settings",
+      "close",
+      "sourceCode",
+      "reportIssue",
+    ];
+    actions.forEach(controller.requestMenuAction);
+
+    expect(posted).toEqual(actions.map((action) => ({ type: "menuAction", action })));
+  });
+
+  it("uses the same zoom commands as the keyboard shortcuts", () => {
+    store.useViewerStore.setState({
+      zoom: 1,
+      panX: 0,
+      panY: 0,
+      viewportWidth: 100,
+      viewportHeight: 100,
+    });
+
+    controller.executeViewerCommand("zoomIn");
+    expect(store.useViewerStore.getState().zoom).toBe(1.5);
+    controller.executeViewerCommand("zoomOut");
+    expect(store.useViewerStore.getState().zoom).toBe(1);
   });
 });
 
