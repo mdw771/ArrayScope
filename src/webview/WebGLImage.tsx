@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
 import type { ComplexDisplayMode, ImageTile } from "../shared/types";
 import { DEFAULT_RANGE, useViewerStore } from "./store";
-import { tileCache, tileToFloatData } from "./tileCache";
+import { overlayTileCache, tileCache, tileToFloatData } from "./tileCache";
 
 const VERTEX_SHADER = `#version 300 es
 precision highp float;
@@ -99,30 +99,47 @@ interface TextureEntry {
   tile: ImageTile;
 }
 
-export function WebGLImage({ mode }: { mode: ComplexDisplayMode | "scalar" }) {
+export function WebGLImage({
+  mode,
+  source = "main",
+}: {
+  mode: ComplexDisplayMode | "scalar";
+  source?: "main" | "overlay";
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const resourcesRef = useRef<{
     gl: WebGL2RenderingContext;
     program: WebGLProgram;
     textures: Map<string, TextureEntry>;
   } | undefined>(undefined);
-  const state = useViewerStore(useShallow((viewer) => ({
-    metadata: viewer.metadata,
-    slice: viewer.currentSlice,
-    zoom: viewer.zoom,
-    panX: viewer.panX,
-    panY: viewer.panY,
-    colormap: viewer.colormap,
-    range: viewer.ranges[mode] ?? DEFAULT_RANGE,
-    tileRevision: viewer.tileRevision,
-    viewportWidth: viewer.viewportWidth,
-    viewportHeight: viewer.viewportHeight,
-  })));
+  const state = useViewerStore(useShallow((viewer) => {
+    const overlay = viewer.overlay;
+    const metadata = source === "overlay" ? overlay?.metadata : viewer.metadata;
+    const renderMode: ComplexDisplayMode | "scalar" = metadata?.isComplex
+      ? mode === "scalar" ? "magnitude" : mode
+      : "scalar";
+    return {
+      metadata,
+      renderMode,
+      slice: source === "overlay" ? overlay?.sliceIndex ?? 0 : viewer.currentSlice,
+      zoom: viewer.zoom,
+      panX: viewer.panX + (source === "overlay" ? (overlay?.offsetX ?? 0) * viewer.zoom : 0),
+      panY: viewer.panY + (source === "overlay" ? (overlay?.offsetY ?? 0) * viewer.zoom : 0),
+      colormap: viewer.colormap,
+      range: source === "overlay"
+        ? overlay?.ranges[renderMode] ?? DEFAULT_RANGE
+        : viewer.ranges[mode] ?? DEFAULT_RANGE,
+      tileRevision: source === "overlay" ? overlay?.tileRevision ?? 0 : viewer.tileRevision,
+      viewportWidth: viewer.viewportWidth,
+      viewportHeight: viewer.viewportHeight,
+      transparency: source === "overlay" ? overlay?.transparency ?? 50 : 0,
+    };
+  }));
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const gl = canvas.getContext("webgl2", { alpha: false, antialias: false });
+    const gl = canvas.getContext("webgl2", { alpha: source === "overlay", antialias: false });
     if (!gl) return;
     const program = createProgram(gl, VERTEX_SHADER, FRAGMENT_SHADER);
     const vertices = gl.createBuffer();
@@ -144,7 +161,7 @@ export function WebGLImage({ mode }: { mode: ComplexDisplayMode | "scalar" }) {
       gl.getExtension("WEBGL_lose_context")?.loseContext();
       resourcesRef.current = undefined;
     };
-  }, []);
+  }, [source]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -161,7 +178,12 @@ export function WebGLImage({ mode }: { mode: ComplexDisplayMode | "scalar" }) {
       canvas.height = pixelHeight;
     }
     gl.viewport(0, 0, canvas.width, canvas.height);
-    gl.clearColor(0.08, 0.08, 0.08, 1);
+    gl.clearColor(
+      source === "overlay" ? 0 : 0.08,
+      source === "overlay" ? 0 : 0.08,
+      source === "overlay" ? 0 : 0.08,
+      source === "overlay" ? 0 : 1,
+    );
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.useProgram(program);
     uniform2f(gl, program, "uCanvasSize", rect.width, rect.height);
@@ -169,12 +191,18 @@ export function WebGLImage({ mode }: { mode: ComplexDisplayMode | "scalar" }) {
     uniform2f(gl, program, "uPan", state.panX, state.panY);
     uniform2f(gl, program, "uRange", state.range[0], state.range[1]);
     uniform1i(gl, program, "uComplex", metadata.isComplex ? 1 : 0);
-    uniform1i(gl, program, "uMode", mode === "scalar" ? 0 : MODE_INDEX[mode]);
+    uniform1i(
+      gl,
+      program,
+      "uMode",
+      state.renderMode === "scalar" ? 0 : MODE_INDEX[state.renderMode],
+    );
     uniform1i(gl, program, "uColormap", COLORMAP_INDEX[state.colormap] ?? 0);
     uniform1i(gl, program, "uData", 0);
     gl.activeTexture(gl.TEXTURE0);
 
-    const tiles = tileCache
+    const cache = source === "overlay" ? overlayTileCache : tileCache;
+    const tiles = cache
       .values(state.slice)
       .sort((a, b) => b.level - a.level || a.requestId - b.requestId);
     const activeKeys = new Set<string>();
@@ -203,9 +231,16 @@ export function WebGLImage({ mode }: { mode: ComplexDisplayMode | "scalar" }) {
         textures.delete(key);
       }
     }
-  }, [state, mode]);
+  }, [state, source]);
 
-  return <canvas ref={canvasRef} className="image-canvas" aria-label={`${mode} image canvas`} />;
+  return (
+    <canvas
+      ref={canvasRef}
+      className={source === "overlay" ? "image-canvas overlay-image-canvas" : "image-canvas"}
+      style={source === "overlay" ? { opacity: (100 - state.transparency) / 100 } : undefined}
+      aria-label={`${mode} ${source} image canvas`}
+    />
+  );
 }
 
 function uploadTile(gl: WebGL2RenderingContext, tile: ImageTile, complex: boolean): WebGLTexture {

@@ -11,7 +11,12 @@ import { SelectionRasterizer } from "../shared/geometry";
 import { postMessage } from "./api";
 import { exceedsAutomaticHistogramPixelLimit } from "./histogramGate";
 import { stableRange, useViewerStore } from "./store";
-import { sampleTile, tileCache } from "./tileCache";
+import {
+  overlayTileCache,
+  sampleTile,
+  tileCache,
+  tileDisplayRange,
+} from "./tileCache";
 
 let requestId = 1;
 let latestHistogramRequest = 0;
@@ -19,6 +24,8 @@ let latestStatisticsRequest = 0;
 let latestSampleRequest = 0;
 const pendingTiles = new Map<number, string>();
 const pendingTileKeys = new Set<string>();
+const pendingOverlayTiles = new Map<number, string>();
+const pendingOverlayTileKeys = new Set<string>();
 
 function nextRequestId(): number {
   return requestId++;
@@ -34,7 +41,10 @@ export function initializeController(): () => void {
     window.removeEventListener("message", listener);
     pendingTiles.clear();
     pendingTileKeys.clear();
+    pendingOverlayTiles.clear();
+    pendingOverlayTileKeys.clear();
     tileCache.clear();
+    overlayTileCache.clear();
   };
 }
 
@@ -50,6 +60,50 @@ function handleHostMessage(message: HostToWebviewMessage): void {
       }
       break;
     }
+    case "overlayMetadata": {
+      clearOverlayCache();
+      overlayTileCache.configure(state.settings.localCacheMB);
+      state.setOverlay(message.overlayId, message.metadata);
+      const id = nextRequestId();
+      pendingOverlayTiles.set(id, `overview:${message.overlayId}`);
+      pendingOverlayTileKeys.add(`overview:${message.overlayId}`);
+      postMessage({
+        type: "getOverlayOverview",
+        overlayId: message.overlayId,
+        sliceIndex: 0,
+        generation: useViewerStore.getState().generation,
+        requestId: id,
+      });
+      break;
+    }
+    case "overlayOverview": {
+      releasePendingOverlayTile(message.tile.requestId);
+      const overlay = state.overlay;
+      if (!overlay || message.overlayId !== overlay.id) return;
+      overlayTileCache.set(message.tile);
+      const modes: Array<ComplexDisplayMode | "scalar"> = overlay.metadata.isComplex
+        ? ["magnitude", "phase"]
+        : ["scalar"];
+      for (const mode of modes) {
+        const range = tileDisplayRange(message.tile, mode);
+        if (range) state.setOverlayRange(mode, stableRange(range[0], range[1]));
+      }
+      state.bumpOverlayTiles();
+      break;
+    }
+    case "overlayTile":
+      releasePendingOverlayTile(message.tile.requestId);
+      if (
+        !state.overlay ||
+        message.overlayId !== state.overlay.id ||
+        message.tile.generation !== state.generation ||
+        message.tile.sliceIndex !== state.overlay.sliceIndex
+      ) {
+        return;
+      }
+      overlayTileCache.set(message.tile);
+      state.bumpOverlayTiles();
+      break;
     case "overview":
       pendingTileKeys.delete(pendingTiles.get(message.tile.requestId) ?? "");
       pendingTiles.delete(message.tile.requestId);
@@ -107,6 +161,7 @@ function handleHostMessage(message: HostToWebviewMessage): void {
         const key = pendingTiles.get(message.requestId);
         if (key) pendingTileKeys.delete(key);
         pendingTiles.delete(message.requestId);
+        releasePendingOverlayTile(message.requestId);
       }
       state.setError({ message: message.message, details: message.details });
       break;
@@ -288,6 +343,11 @@ export function samplePixel(x: number, y: number): void {
 }
 
 export function requestVisibleTiles(): void {
+  requestMainVisibleTiles();
+  requestOverlayVisibleTiles();
+}
+
+function requestMainVisibleTiles(): void {
   const state = useViewerStore.getState();
   const metadata = state.metadata;
   if (!metadata || state.zoom <= 0 || state.viewportWidth <= 0 || state.viewportHeight <= 0) return;
@@ -333,6 +393,87 @@ export function requestVisibleTiles(): void {
     if (requests.length === 128) break;
   }
   if (requests.length > 0) postMessage({ type: "getTiles", requests });
+}
+
+function requestOverlayVisibleTiles(): void {
+  const state = useViewerStore.getState();
+  const overlay = state.overlay;
+  if (!overlay || state.zoom <= 0 || state.viewportWidth <= 0 || state.viewportHeight <= 0) return;
+  const metadata = overlay.metadata;
+  const level = Math.max(0, Math.min(30, Math.floor(Math.log2(Math.max(1, 1 / state.zoom)))));
+  const factor = 2 ** level;
+  const levelWidth = Math.ceil(metadata.width / factor);
+  const levelHeight = Math.ceil(metadata.height / factor);
+  const tileSize = state.settings.tileSize;
+  const left = Math.max(
+    0,
+    Math.floor(((-state.panX / state.zoom) - overlay.offsetX) / factor),
+  );
+  const top = Math.max(
+    0,
+    Math.floor(((-state.panY / state.zoom) - overlay.offsetY) / factor),
+  );
+  const right = Math.min(
+    levelWidth,
+    Math.ceil((((state.viewportWidth - state.panX) / state.zoom) - overlay.offsetX) / factor),
+  );
+  const bottom = Math.min(
+    levelHeight,
+    Math.ceil((((state.viewportHeight - state.panY) / state.zoom) - overlay.offsetY) / factor),
+  );
+  if (right <= left || bottom <= top) return;
+  const requests: ImageTileRequest[] = [];
+  const firstX = Math.floor(left / tileSize) * tileSize;
+  const firstY = Math.floor(top / tileSize) * tileSize;
+  for (let y = firstY; y < bottom; y += tileSize) {
+    for (let x = firstX; x < right; x += tileSize) {
+      const width = Math.min(tileSize, levelWidth - x);
+      const height = Math.min(tileSize, levelHeight - y);
+      const key = `${overlay.id}:${overlay.sliceIndex}:${level}:${x}:${y}:${width}:${height}`;
+      const query = { sliceIndex: overlay.sliceIndex, level, x, y, width, height };
+      if (
+        overlayTileCache.covers(query, metadata.width, metadata.height) ||
+        pendingOverlayTileKeys.has(key)
+      ) {
+        continue;
+      }
+      const id = nextRequestId();
+      pendingOverlayTileKeys.add(key);
+      pendingOverlayTiles.set(id, key);
+      requests.push({
+        ...query,
+        requestId: id,
+        generation: state.generation,
+        priority: "visible",
+      });
+      if (requests.length === 128) break;
+    }
+    if (requests.length === 128) break;
+  }
+  if (requests.length > 0) {
+    postMessage({ type: "getOverlayTiles", overlayId: overlay.id, requests });
+  }
+}
+
+export function removeOverlay(): void {
+  const state = useViewerStore.getState();
+  const overlay = state.overlay;
+  if (!overlay) return;
+  clearOverlayCache();
+  state.removeOverlay();
+  postMessage({ type: "removeOverlay", overlayId: overlay.id });
+}
+
+function clearOverlayCache(): void {
+  pendingOverlayTiles.clear();
+  pendingOverlayTileKeys.clear();
+  overlayTileCache.clear();
+}
+
+function releasePendingOverlayTile(request: number): void {
+  const key = pendingOverlayTiles.get(request);
+  if (key) pendingOverlayTileKeys.delete(key);
+  pendingOverlayTiles.delete(request);
 }
 
 export function executeViewerCommand(command: ViewerCommand): void {

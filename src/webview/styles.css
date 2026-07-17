@@ -100,7 +100,7 @@ input, select {
 .zoom-readout { margin-left: auto; min-width: 52px; text-align: right; color: var(--vscode-descriptionForeground); }
 
 .workspace { display: grid; grid-template-columns: minmax(0, 1fr) 320px; min-height: 0; }
-.viewer-region { min-width: 0; min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr) auto; background: var(--vscode-editor-background); }
+.viewer-region { position: relative; min-width: 0; min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr) auto; background: var(--vscode-editor-background); }
 .canvas-grid { min-height: 0; display: grid; gap: 1px; background: var(--vscode-panel-border); }
 .canvas-grid.scalar { grid-template-columns: minmax(0, 1fr); }
 .canvas-grid.complex { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -115,6 +115,9 @@ input, select {
 .viewport[data-temporary-pan="true"] { cursor: grab; }
 .viewport[data-temporary-pan="true"]:active { cursor: grabbing; }
 .image-canvas, .overlay { position: absolute; inset: 0; width: 100%; height: 100%; }
+.overlay-image-canvas { pointer-events: none; }
+.viewport[data-overlay-hover="true"] { cursor: grab; }
+.viewport[data-dragging-overlay="true"] { cursor: grabbing; }
 .overlay { pointer-events: none; }
 .overlay svg rect, .overlay svg ellipse, .overlay svg line, .overlay svg polygon, .overlay svg polyline {
   fill: color-mix(in srgb, var(--vscode-focusBorder) 15%, transparent);
@@ -157,6 +160,62 @@ input, select {
 }
 .sample-dismiss:hover { background: var(--vscode-toolbar-hoverBackground); }
 .sample-loading { left: 8px; bottom: 8px; top: auto; min-width: 0; }
+
+.overlay-controls {
+  position: absolute;
+  z-index: 12;
+  width: min(310px, calc(100% - 16px));
+  border: 1px solid var(--vscode-widget-border);
+  border-radius: 4px;
+  color: var(--vscode-editorHoverWidget-foreground);
+  background: var(--vscode-editorHoverWidget-background);
+  box-shadow: 0 3px 12px var(--vscode-widget-shadow);
+}
+.overlay-controls-title {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 30px;
+  padding-left: 9px;
+  border-bottom: 1px solid var(--vscode-widget-border);
+  cursor: move;
+  user-select: none;
+  touch-action: none;
+  font-weight: 600;
+}
+.overlay-controls-title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.overlay-controls-title button {
+  width: 29px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font-size: 18px;
+}
+.overlay-controls-title button:hover { background: var(--vscode-toolbar-hoverBackground); }
+.overlay-transparency {
+  display: grid;
+  grid-template-columns: auto minmax(70px, 1fr) 38px;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+}
+.overlay-transparency input { min-width: 0; }
+.overlay-transparency output { text-align: right; font-variant-numeric: tabular-nums; }
+.overlay-position {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 10px;
+  padding: 0 10px 10px;
+}
+.overlay-position > span { grid-column: 1 / -1; color: var(--vscode-descriptionForeground); }
+.overlay-position code {
+  padding: 4px 6px;
+  color: var(--vscode-textPreformat-foreground);
+  background: var(--vscode-textCodeBlock-background);
+  font-variant-numeric: tabular-nums;
+}
 
 .stack-controls { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-top: 1px solid var(--vscode-panel-border); background: var(--vscode-editorGroupHeader-tabsBackground); }
 .stack-controls > input[type="range"] { flex: 1; }

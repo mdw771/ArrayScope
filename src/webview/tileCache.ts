@@ -1,4 +1,9 @@
-import { DTYPE_BYTES, type ImageTile, type NumericDType } from "../shared/types";
+import {
+  DTYPE_BYTES,
+  type ComplexDisplayMode,
+  type ImageTile,
+  type NumericDType,
+} from "../shared/types";
 import { decodeValue } from "../host/numeric";
 
 function keyFor(tile: Pick<ImageTile, "sliceIndex" | "level" | "x" | "y" | "width" | "height">): string {
@@ -138,6 +143,7 @@ export class LocalTileCache {
 }
 
 export const tileCache = new LocalTileCache();
+export const overlayTileCache = new LocalTileCache();
 
 function sourceRect(tile: TileRegion, imageWidth: number, imageHeight: number) {
   const factor = 2 ** tile.level;
@@ -174,4 +180,36 @@ export function tileToFloatData(tile: ImageTile): Float32Array {
     }
   }
   return output;
+}
+
+export function tileDisplayRange(
+  tile: ImageTile,
+  mode: ComplexDisplayMode | "scalar",
+): [number, number] | undefined {
+  const view = new DataView(tile.data);
+  const bytes = DTYPE_BYTES[tile.dtype];
+  let minimum = Number.POSITIVE_INFINITY;
+  let maximum = Number.NEGATIVE_INFINITY;
+  for (let index = 0; index < tile.width * tile.height; index += 1) {
+    const decoded = decodeValue(view, index * bytes, tile.dtype as NumericDType, true);
+    let value = decoded.scalar;
+    if (value === undefined) {
+      const real = decoded.real ?? Number.NaN;
+      const imaginary = decoded.imaginary ?? Number.NaN;
+      const magnitudeSquared = real * real + imaginary * imaginary;
+      switch (mode) {
+        case "phase": value = Math.atan2(imaginary, real); break;
+        case "real": value = real; break;
+        case "imaginary": value = imaginary; break;
+        case "logMagnitude": value = Math.log1p(Math.sqrt(magnitudeSquared)); break;
+        case "magnitudeSquared": value = magnitudeSquared; break;
+        default: value = Math.sqrt(magnitudeSquared); break;
+      }
+    }
+    if (Number.isFinite(value)) {
+      minimum = Math.min(minimum, value);
+      maximum = Math.max(maximum, value);
+    }
+  }
+  return minimum <= maximum ? [minimum, maximum] : undefined;
 }

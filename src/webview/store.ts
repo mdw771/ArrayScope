@@ -17,6 +17,17 @@ export interface DraftPolygon {
 
 export const DEFAULT_RANGE: [number, number] = [0, 1];
 
+export interface ViewerOverlay {
+  id: number;
+  metadata: ImageMetadata;
+  sliceIndex: number;
+  offsetX: number;
+  offsetY: number;
+  transparency: number;
+  ranges: Partial<Record<ComplexDisplayMode | "scalar", [number, number]>>;
+  tileRevision: number;
+}
+
 export interface ViewerState {
   metadata?: ImageMetadata;
   settings: ViewerSettings;
@@ -44,6 +55,7 @@ export interface ViewerState {
   resetRangePending: boolean;
   generation: number;
   tileRevision: number;
+  overlay?: ViewerOverlay;
   error?: { message: string; details?: string };
   setMetadata(metadata: ImageMetadata, settings: ViewerSettings): void;
   setTool(tool: ViewerTool): void;
@@ -64,6 +76,12 @@ export interface ViewerState {
   setAutoContrastPending(pending: boolean): void;
   setResetRangePending(pending: boolean): void;
   bumpTiles(): void;
+  setOverlay(id: number, metadata: ImageMetadata): void;
+  removeOverlay(): void;
+  setOverlayOffset(offsetX: number, offsetY: number): void;
+  setOverlayTransparency(transparency: number): void;
+  setOverlayRange(mode: ComplexDisplayMode | "scalar", range: [number, number]): void;
+  bumpOverlayTiles(): void;
   setError(error?: { message: string; details?: string }): void;
 }
 
@@ -142,6 +160,44 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
   setAutoContrastPending: (autoContrastPending) => set({ autoContrastPending }),
   setResetRangePending: (resetRangePending) => set({ resetRangePending }),
   bumpTiles: () => set((state) => ({ tileRevision: state.tileRevision + 1 })),
+  setOverlay: (id, metadata) =>
+    set((state) => ({
+      overlay: {
+        id,
+        metadata,
+        sliceIndex: 0,
+        offsetX: 0,
+        offsetY: 0,
+        transparency: 50,
+        ranges: {},
+        tileRevision: 0,
+      },
+      generation: state.generation + 1,
+    })),
+  removeOverlay: () => set((state) => ({ overlay: undefined, generation: state.generation + 1 })),
+  setOverlayOffset: (offsetX, offsetY) =>
+    set((state) => ({
+      overlay: state.overlay ? { ...state.overlay, offsetX, offsetY } : undefined,
+      generation: state.generation + 1,
+    })),
+  setOverlayTransparency: (transparency) =>
+    set((state) => ({
+      overlay: state.overlay
+        ? { ...state.overlay, transparency: Math.max(0, Math.min(100, transparency)) }
+        : undefined,
+    })),
+  setOverlayRange: (mode, range) =>
+    set((state) => ({
+      overlay: state.overlay
+        ? { ...state.overlay, ranges: { ...state.overlay.ranges, [mode]: range } }
+        : undefined,
+    })),
+  bumpOverlayTiles: () =>
+    set((state) => ({
+      overlay: state.overlay
+        ? { ...state.overlay, tileRevision: state.overlay.tileRevision + 1 }
+        : undefined,
+    })),
   setError: (error) => set({ error, calculationPending: undefined, sampleLoading: undefined }),
 }));
 

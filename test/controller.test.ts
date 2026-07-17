@@ -9,6 +9,7 @@ import type {
 const posted: WebviewToHostMessage[] = [];
 let controller: typeof import("../src/webview/controller");
 let store: typeof import("../src/webview/store");
+let caches: typeof import("../src/webview/tileCache");
 
 beforeAll(async () => {
   vi.stubGlobal("acquireVsCodeApi", () => ({
@@ -18,6 +19,7 @@ beforeAll(async () => {
   }));
   store = await import("../src/webview/store");
   controller = await import("../src/webview/controller");
+  caches = await import("../src/webview/tileCache");
 });
 
 beforeEach(() => {
@@ -33,6 +35,13 @@ beforeEach(() => {
     autoContrastPending: false,
     resetRangePending: false,
     ranges: { scalar: [0, 10] },
+    overlay: undefined,
+    generation: 1,
+    zoom: 1,
+    panX: 0,
+    panY: 0,
+    viewportWidth: 0,
+    viewportHeight: 0,
     settings: {
       localCacheMB: 256,
       tileSize: 256,
@@ -211,6 +220,7 @@ describe("menu behavior", () => {
     const actions: MenuAction[] = [
       "open",
       "openInNewTab",
+      "addOverlay",
       "settings",
       "close",
       "sourceCode",
@@ -234,6 +244,61 @@ describe("menu behavior", () => {
     expect(store.useViewerStore.getState().zoom).toBe(1.5);
     controller.executeViewerCommand("zoomOut");
     expect(store.useViewerStore.getState().zoom).toBe(1);
+  });
+
+  it("requests zoom-adaptive tiles in overlay coordinates", () => {
+    store.useViewerStore.getState().setOverlay(7, { ...metadata, width: 1_000, height: 1_000 });
+    store.useViewerStore.setState({
+      viewportWidth: 100,
+      viewportHeight: 100,
+      zoom: 1,
+      panX: 0,
+      panY: 0,
+      generation: 12,
+      overlay: {
+        ...store.useViewerStore.getState().overlay!,
+        offsetX: -300,
+      },
+    });
+
+    controller.requestVisibleTiles();
+
+    const message = posted.find((candidate) => candidate.type === "getOverlayTiles");
+    expect(message).toMatchObject({
+      type: "getOverlayTiles",
+      overlayId: 7,
+      requests: [{ x: 256, y: 0, level: 0, generation: 12 }],
+    });
+  });
+
+  it("removes overlay state and releases its local numeric tiles", () => {
+    store.useViewerStore.getState().setOverlay(9, metadata);
+    caches.overlayTileCache.set({
+      requestId: 1,
+      generation: 1,
+      sliceIndex: 0,
+      level: 0,
+      x: 0,
+      y: 0,
+      width: 1,
+      height: 1,
+      dtype: "uint8",
+      data: new ArrayBuffer(1),
+    });
+
+    controller.removeOverlay();
+
+    expect(store.useViewerStore.getState().overlay).toBeUndefined();
+    expect(caches.overlayTileCache.values(0)).toEqual([]);
+    expect(posted.at(-1)).toEqual({ type: "removeOverlay", overlayId: 9 });
+  });
+
+  it("starts overlays at 50% transparency and updates the rendered setting", () => {
+    store.useViewerStore.getState().setOverlay(10, metadata);
+
+    expect(store.useViewerStore.getState().overlay?.transparency).toBe(50);
+    store.useViewerStore.getState().setOverlayTransparency(82);
+    expect(store.useViewerStore.getState().overlay?.transparency).toBe(82);
   });
 });
 

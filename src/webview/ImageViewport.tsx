@@ -12,10 +12,11 @@ import { useViewerStore } from "./store";
 import { WebGLImage } from "./WebGLImage";
 
 interface DragState {
-  kind: "selection" | "pan" | "magnifier" | "sampler";
+  kind: "selection" | "pan" | "magnifier" | "sampler" | "overlay";
   startImage: { x: number; y: number };
   startScreen: { x: number; y: number };
   startPan: { x: number; y: number };
+  startOverlay: { x: number; y: number };
   button: number;
   altKey: boolean;
 }
@@ -54,7 +55,17 @@ export function ImageViewport({ mode }: { mode: ComplexDisplayMode | "scalar" })
   useEffect(() => {
     const timer = window.setTimeout(requestVisibleTiles, 100);
     return () => window.clearTimeout(timer);
-  }, [state.currentSlice, state.zoom, state.panX, state.panY, state.viewportWidth, state.viewportHeight]);
+  }, [
+    state.currentSlice,
+    state.zoom,
+    state.panX,
+    state.panY,
+    state.viewportWidth,
+    state.viewportHeight,
+    state.overlay?.id,
+    state.overlay?.offsetX,
+    state.overlay?.offsetY,
+  ]);
 
   useEffect(() => {
     const setSpaceHeld = (held: boolean): void => {
@@ -83,14 +94,20 @@ export function ImageViewport({ mode }: { mode: ComplexDisplayMode | "scalar" })
   if (!metadata) return <div className="viewport loading">Loading metadata…</div>;
 
   const transform = { zoom: state.zoom, panX: state.panX, panY: state.panY };
-  const localPoint = (event: PointerEvent): { screen: { x: number; y: number }; image: { x: number; y: number } } => {
+  const localPoint = (event: PointerEvent): {
+    screen: { x: number; y: number };
+    rawImage: { x: number; y: number };
+    image: { x: number; y: number };
+  } => {
     const rect = wrapperRef.current!.getBoundingClientRect();
     const screen = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    const rawImage = screenToImage(screen, transform);
     return {
       screen,
+      rawImage,
       image: clampImagePoint(
-        screenToImage(screen, transform).x,
-        screenToImage(screen, transform).y,
+        rawImage.x,
+        rawImage.y,
         metadata.width,
         metadata.height,
       ),
@@ -101,14 +118,17 @@ export function ImageViewport({ mode }: { mode: ComplexDisplayMode | "scalar" })
     wrapperRef.current?.focus();
     const point = localPoint(event);
     const temporaryPan = spaceHeldRef.current;
-    const kind = temporaryPan || state.activeTool === "pan"
+    const overlayHit = event.button === 0 && pointInsideOverlay(point.rawImage, state.overlay);
+    const kind = overlayHit
+      ? "overlay"
+      : temporaryPan || state.activeTool === "pan"
       ? "pan"
       : state.activeTool === "magnifier"
         ? "magnifier"
         : state.activeTool === "sampler"
           ? "sampler"
           : "selection";
-    if (state.activeTool === "polygon" && !temporaryPan) {
+    if (state.activeTool === "polygon" && !temporaryPan && kind !== "overlay") {
       addPolygonVertex(point.image, point.screen);
       return;
     }
@@ -117,9 +137,11 @@ export function ImageViewport({ mode }: { mode: ComplexDisplayMode | "scalar" })
       startImage: point.image,
       startScreen: point.screen,
       startPan: { x: state.panX, y: state.panY },
+      startOverlay: { x: state.overlay?.offsetX ?? 0, y: state.overlay?.offsetY ?? 0 },
       button: event.button,
       altKey: event.altKey,
     };
+    if (kind === "overlay") event.currentTarget.dataset.draggingOverlay = "true";
     event.currentTarget.setPointerCapture(event.pointerId);
     if (kind === "selection") {
       state.setDraftSelection(selectionFromDrag(state.activeTool, point.image, point.image, event));
@@ -130,10 +152,18 @@ export function ImageViewport({ mode }: { mode: ComplexDisplayMode | "scalar" })
     const drag = dragRef.current;
     const point = localPoint(event);
     if (!drag) {
+      if (wrapperRef.current) {
+        wrapperRef.current.dataset.overlayHover = String(pointInsideOverlay(point.rawImage, state.overlay));
+      }
       if (state.draftPolygon) state.setDraftPolygon({ ...state.draftPolygon, pointer: point.image });
       return;
     }
-    if (drag.kind === "pan") {
+    if (drag.kind === "overlay") {
+      state.setOverlayOffset(
+        drag.startOverlay.x + (point.screen.x - drag.startScreen.x) / state.zoom,
+        drag.startOverlay.y + (point.screen.y - drag.startScreen.y) / state.zoom,
+      );
+    } else if (drag.kind === "pan") {
       state.setView({
         panX: drag.startPan.x + point.screen.x - drag.startScreen.x,
         panY: drag.startPan.y + point.screen.y - drag.startScreen.y,
@@ -148,6 +178,7 @@ export function ImageViewport({ mode }: { mode: ComplexDisplayMode | "scalar" })
     if (!drag) return;
     const point = localPoint(event);
     dragRef.current = undefined;
+    if (wrapperRef.current) wrapperRef.current.dataset.draggingOverlay = "false";
     if (drag.kind === "selection") {
       commitSelection(selectionFromDrag(state.activeTool, drag.startImage, point.image, event));
     } else if (drag.kind === "sampler") {
@@ -217,6 +248,7 @@ export function ImageViewport({ mode }: { mode: ComplexDisplayMode | "scalar" })
         onPointerUp={onPointerUp}
         onPointerCancel={() => {
           dragRef.current = undefined;
+          if (wrapperRef.current) wrapperRef.current.dataset.draggingOverlay = "false";
           state.setDraftSelection(undefined);
         }}
         onDoubleClick={() => {
@@ -236,10 +268,22 @@ export function ImageViewport({ mode }: { mode: ComplexDisplayMode | "scalar" })
         onKeyDown={onKeyDown}
       >
         <WebGLImage mode={mode} />
+        {state.overlay && <WebGLImage mode={mode} source="overlay" />}
         <SelectionOverlay mode={mode} />
       </div>
     </div>
   );
+}
+
+function pointInsideOverlay(
+  point: { x: number; y: number },
+  overlay: ReturnType<typeof useViewerStore.getState>["overlay"],
+): boolean {
+  if (!overlay) return false;
+  return point.x >= overlay.offsetX &&
+    point.y >= overlay.offsetY &&
+    point.x < overlay.offsetX + overlay.metadata.width &&
+    point.y < overlay.offsetY + overlay.metadata.height;
 }
 
 function isInteractiveTarget(target: EventTarget | null): boolean {

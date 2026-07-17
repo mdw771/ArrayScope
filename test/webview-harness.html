@@ -33,6 +33,11 @@
       8, 9, 10, 11,
       12, 13, 14, 15,
     ]);
+    const overlayValues = new Float32Array([
+      0, 8, 16,
+      16, 8, 0,
+      0, 8, 16,
+    ]);
     let savedState;
     window.acquireVsCodeApi = () => ({
       getState: () => savedState,
@@ -74,6 +79,36 @@
         } else if (message.type === "samplePixel") {
           const { x, y, requestId, sliceIndex } = message.request;
           respond({ type: "sample", result: { requestId, sliceIndex, x, y, value: values[y * 4 + x] }});
+        } else if (message.type === "menuAction" && message.action === "addOverlay") {
+          respond({ type: "overlayMetadata", overlayId: 1, metadata: {
+            uri: "file:///overlay.npy", fileName: "overlay.npy", format: "npy",
+            shape: [3, 3], width: 3, height: 3, sliceCount: 1, dtype: "float32",
+            byteOrder: "little", fortranOrder: false, fileSizeBytes: 36,
+            totalElementCount: 9, isComplex: false,
+            additionalMetadata: { dimensionality: "image", npyVersion: "1.0" },
+          }});
+        } else if (message.type === "getOverlayOverview") {
+          respond({
+            type: "overlayOverview",
+            overlayId: message.overlayId,
+            tile: overlayTileFor(message.requestId, message.generation, 0, 0, 3, 3),
+          });
+        } else if (message.type === "getOverlayTiles") {
+          for (const request of message.requests) {
+            respond({
+              type: "overlayTile",
+              overlayId: message.overlayId,
+              tile: overlayTileFor(
+                request.requestId,
+                request.generation,
+                request.x,
+                request.y,
+                request.width,
+                request.height,
+                request.level,
+              ),
+            });
+          }
         }
       },
     });
@@ -85,6 +120,14 @@
         data[oy * width + ox] = values[(y + oy) * factor * 4 + (x + ox) * factor] ?? 0;
       }
       return { requestId, generation, sliceIndex, level, x, y, width, height, dtype: "float32", data: data.buffer };
+    }
+    function overlayTileFor(requestId, generation, x, y, width, height, level = 0) {
+      const factor = 2 ** level;
+      const data = new Float32Array(width * height);
+      for (let oy = 0; oy < height; oy++) for (let ox = 0; ox < width; ox++) {
+        data[oy * width + ox] = overlayValues[(y + oy) * factor * 3 + (x + ox) * factor] ?? 0;
+      }
+      return { requestId, generation, sliceIndex: 0, level, x, y, width, height, dtype: "float32", data: data.buffer };
     }
   </script>
   <script src="../dist/webview.js"></script>

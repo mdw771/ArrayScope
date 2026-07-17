@@ -186,6 +186,7 @@ export type ViewerCommand =
 export type MenuAction =
   | "open"
   | "openInNewTab"
+  | "addOverlay"
   | "settings"
   | "close"
   | "sourceCode"
@@ -194,6 +195,15 @@ export type MenuAction =
 export type WebviewToHostMessage =
   | { type: "ready" }
   | { type: "menuAction"; action: MenuAction }
+  | { type: "removeOverlay"; overlayId: number }
+  | {
+      type: "getOverlayOverview";
+      overlayId: number;
+      sliceIndex: number;
+      generation: number;
+      requestId: number;
+    }
+  | { type: "getOverlayTiles"; overlayId: number; requests: ImageTileRequest[] }
   | { type: "getOverview"; sliceIndex: number; generation: number; requestId: number }
   | { type: "getTiles"; requests: ImageTileRequest[] }
   | { type: "computeHistogram"; request: HistogramRequest }
@@ -208,6 +218,9 @@ export interface ViewerSettings {
 
 export type HostToWebviewMessage =
   | { type: "metadata"; metadata: ImageMetadata; settings: ViewerSettings }
+  | { type: "overlayMetadata"; overlayId: number; metadata: ImageMetadata }
+  | { type: "overlayOverview"; overlayId: number; tile: ImageTile }
+  | { type: "overlayTile"; overlayId: number; tile: ImageTile }
   | { type: "overview"; tile: ImageTile }
   | { type: "tile"; tile: ImageTile }
   | { type: "histogram"; result: HistogramResult }

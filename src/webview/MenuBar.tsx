@@ -106,6 +106,12 @@ export function MenuBar() {
           disabled: !hasImage,
           action: requestHistogram,
         },
+        {
+          label: "Add overlay",
+          disabled: !hasImage,
+          separatorBefore: true,
+          action: hostAction("addOverlay"),
+        },
       ],
     },
     {

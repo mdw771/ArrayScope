@@ -18,6 +18,7 @@ ArrayScope is a read-only VS Code custom editor for scientific NPY and TIFF imag
 - Rectangle, ellipse, line, polygon, sampler, magnifier, and pan tools.
 - Selection-aware histograms, 1st/99th percentile auto contrast, and statistics for local and remote files.
 - Full-resolution pixel value sampling.
+- Manual image registration with draggable, progressively tiled overlays and transparency controls.
 - VS Code theme colors, accessible controls, commands, and configurable keyboard shortcuts.
 
 ## Use

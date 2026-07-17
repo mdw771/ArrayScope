@@ -22,18 +22,8 @@ class ScientificImageDocument implements vscode.CustomDocument {
   ) {}
 
   static async create(uri: vscode.Uri): Promise<ScientificImageDocument> {
-    const cacheMB = vscode.workspace
-      .getConfiguration("scientificImageViewer")
-      .get<number>("remoteCacheMB", 512);
-    const cacheBytes = cacheMB * 1024 * 1024;
-    const extension = uri.path.toLowerCase();
     try {
-      const dataSource = extension.endsWith(".npy")
-        ? await NpyImageDataSource.create(uri, cacheBytes)
-        : extension.endsWith(".tif") || extension.endsWith(".tiff")
-          ? await TiffImageDataSource.create(uri, cacheBytes)
-          : undefined;
-      if (!dataSource) throw new Error(`Unsupported scientific image extension for ${uri.path}.`);
+      const dataSource = await createImageDataSource(uri);
       return new ScientificImageDocument(uri, dataSource);
     } catch (error) {
       return new ScientificImageDocument(uri, undefined, error);
@@ -49,12 +39,20 @@ class ScientificImageDocument implements vscode.CustomDocument {
   }
 }
 
+interface OverlaySession {
+  id: number;
+  dataSource: ScientificImageDataSource;
+  abortController: AbortController;
+}
+
 class ScientificImageEditorProvider
   implements vscode.CustomReadonlyEditorProvider<ScientificImageDocument>
 {
   readonly #panels = new Set<vscode.WebviewPanel>();
   readonly #scheduler = new RequestScheduler(4);
   readonly #computeScheduler = new RequestScheduler(1);
+  readonly #overlays = new Map<vscode.WebviewPanel, OverlaySession>();
+  #nextOverlayId = 1;
   #activePanel?: vscode.WebviewPanel;
 
   constructor(readonly context: vscode.ExtensionContext) {}
@@ -98,6 +96,9 @@ class ScientificImageEditorProvider
       if (this.#activePanel === webviewPanel) {
         this.#activePanel = [...this.#panels].find((panel) => panel.active);
       }
+      void this.disposeOverlay(webviewPanel).catch((error: unknown) => {
+        console.error("ArrayScope failed to close an overlay:", error);
+      });
     });
 
     webview.onDidReceiveMessage((raw: unknown) => {
@@ -112,6 +113,56 @@ class ScientificImageEditorProvider
       if (message.type === "menuAction") {
         void this.handleMenuAction(message.action, webviewPanel, document.uri)
           .catch((error) => send(errorMessage(error)));
+        return;
+      }
+      if (message.type === "removeOverlay") {
+        void this.disposeOverlay(webviewPanel, message.overlayId)
+          .catch((error) => send(errorMessage(error)));
+        return;
+      }
+      if (message.type === "getOverlayOverview") {
+        const overlay = this.#overlays.get(webviewPanel);
+        if (!overlay || overlay.id !== message.overlayId) return;
+        void this.#scheduler
+          .enqueue(
+            0,
+            () => overlay.dataSource.getOverview(message.sliceIndex, overlay.abortController.signal),
+            overlay.abortController.signal,
+          )
+          .then((tile) => send({
+            type: "overlayOverview",
+            overlayId: overlay.id,
+            tile: { ...tile, requestId: message.requestId, generation: message.generation },
+          }))
+          .catch((error) => {
+            if (!isCancellationError(error) && this.#overlays.get(webviewPanel) === overlay) {
+              return send(errorMessage(error, message.requestId));
+            }
+          });
+        return;
+      }
+      if (message.type === "getOverlayTiles") {
+        const overlay = this.#overlays.get(webviewPanel);
+        if (!overlay || overlay.id !== message.overlayId) return;
+        if (message.requests.length > 128) {
+          void send({ type: "error", message: "An overlay tile batch may contain at most 128 requests." });
+          return;
+        }
+        for (const request of message.requests) {
+          const priority = request.priority === "immediate" ? 0 : request.priority === "visible" ? 1 : 4;
+          void this.#scheduler
+            .enqueue(
+              priority,
+              () => overlay.dataSource.getTile(request, overlay.abortController.signal),
+              overlay.abortController.signal,
+            )
+            .then((tile) => send({ type: "overlayTile", overlayId: overlay.id, tile }))
+            .catch((error) => {
+              if (!isCancellationError(error) && this.#overlays.get(webviewPanel) === overlay) {
+                return send(errorMessage(error, request.requestId));
+              }
+            });
+        }
         return;
       }
       const dataSource = document.dataSource;
@@ -259,6 +310,9 @@ class ScientificImageEditorProvider
       case "openInNewTab":
         await this.openImage(webviewPanel, documentUri, false);
         break;
+      case "addOverlay":
+        await this.addOverlay(webviewPanel, documentUri);
+        break;
       case "settings":
         await vscode.commands.executeCommand(
           "workbench.action.openSettings",
@@ -275,6 +329,72 @@ class ScientificImageEditorProvider
         await openExternal(ISSUE_TRACKER_URL);
         break;
     }
+  }
+
+  private async addOverlay(
+    webviewPanel: vscode.WebviewPanel,
+    documentUri: vscode.Uri,
+  ): Promise<void> {
+    const selected = await vscode.window.showOpenDialog({
+      title: "Add Image Overlay",
+      openLabel: "Add Overlay",
+      defaultUri: vscode.Uri.joinPath(documentUri, ".."),
+      canSelectFiles: true,
+      canSelectFolders: false,
+      canSelectMany: false,
+      filters: { "Scientific images": ["npy", "tif", "tiff"] },
+    });
+    const uri = selected?.[0];
+    if (!uri) return;
+
+    const dataSource = await createImageDataSource(uri);
+    try {
+      const metadata = await dataSource.getMetadata();
+      if (metadata.format === "npy" && metadata.additionalMetadata?.dimensionality !== "image") {
+        throw new Error("The overlay must be a 2D image or a 3D image stack.");
+      }
+      if (!this.#panels.has(webviewPanel)) {
+        await dataSource.dispose();
+        return;
+      }
+      const previous = this.#overlays.get(webviewPanel);
+      const overlay: OverlaySession = {
+        id: this.#nextOverlayId++,
+        dataSource,
+        abortController: new AbortController(),
+      };
+      this.#overlays.set(webviewPanel, overlay);
+      previous?.abortController.abort();
+      if (previous) {
+        void previous.dataSource.dispose().catch((error: unknown) => {
+          console.error("ArrayScope failed to dispose a replaced overlay:", error);
+        });
+      }
+      await this.post(webviewPanel.webview, {
+        type: "overlayMetadata",
+        overlayId: overlay.id,
+        metadata,
+      });
+    } catch (error) {
+      const installed = this.#overlays.get(webviewPanel);
+      if (installed?.dataSource === dataSource) {
+        this.#overlays.delete(webviewPanel);
+        installed.abortController.abort();
+      }
+      await dataSource.dispose();
+      throw error;
+    }
+  }
+
+  private async disposeOverlay(
+    webviewPanel: vscode.WebviewPanel,
+    expectedId?: number,
+  ): Promise<void> {
+    const overlay = this.#overlays.get(webviewPanel);
+    if (!overlay || (expectedId !== undefined && overlay.id !== expectedId)) return;
+    this.#overlays.delete(webviewPanel);
+    overlay.abortController.abort();
+    await overlay.dataSource.dispose();
   }
 
   private async openImage(
@@ -349,6 +469,17 @@ function isWebviewMessage(value: unknown): value is WebviewToHostMessage {
       return true;
     case "menuAction":
       return isMenuAction(value.action);
+    case "removeOverlay":
+      return integer(value.overlayId);
+    case "getOverlayOverview":
+      return integer(value.overlayId) &&
+        integer(value.sliceIndex) &&
+        integer(value.generation) &&
+        integer(value.requestId);
+    case "getOverlayTiles":
+      return integer(value.overlayId) &&
+        Array.isArray(value.requests) &&
+        value.requests.every(isTileRequest);
     case "getOverview":
       return integer(value.sliceIndex) && integer(value.generation) && integer(value.requestId);
     case "getTiles":
@@ -381,6 +512,7 @@ function isWebviewMessage(value: unknown): value is WebviewToHostMessage {
 function isMenuAction(value: unknown): value is MenuAction {
   return value === "open" ||
     value === "openInNewTab" ||
+    value === "addOverlay" ||
     value === "settings" ||
     value === "close" ||
     value === "sourceCode" ||
@@ -467,6 +599,19 @@ function createNonce(): string {
 async function openExternal(url: string): Promise<void> {
   const opened = await vscode.env.openExternal(vscode.Uri.parse(url));
   if (!opened) throw new Error(`VS Code could not open ${url}.`);
+}
+
+async function createImageDataSource(uri: vscode.Uri): Promise<ScientificImageDataSource> {
+  const cacheMB = vscode.workspace
+    .getConfiguration("scientificImageViewer")
+    .get<number>("remoteCacheMB", 512);
+  const cacheBytes = cacheMB * 1024 * 1024;
+  const extension = uri.path.toLowerCase();
+  if (extension.endsWith(".npy")) return NpyImageDataSource.create(uri, cacheBytes);
+  if (extension.endsWith(".tif") || extension.endsWith(".tiff")) {
+    return TiffImageDataSource.create(uri, cacheBytes);
+  }
+  throw new Error(`Unsupported scientific image extension for ${uri.path}.`);
 }
 
 export function activate(context: vscode.ExtensionContext): void {
