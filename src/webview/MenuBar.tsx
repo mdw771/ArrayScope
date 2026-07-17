@@ -1,9 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import type { MenuAction } from "../shared/types";
-import { executeViewerCommand, requestMenuAction } from "./controller";
+import {
+  autoContrast,
+  executeViewerCommand,
+  requestHistogram,
+  requestMenuAction,
+  requestStatistics,
+  resetDynamicRange,
+} from "./controller";
 import { useViewerStore } from "./store";
 
-type MenuName = "file" | "view" | "help";
+type MenuName = "file" | "view" | "tools" | "help";
 
 interface MenuItem {
   label: string;
@@ -19,7 +26,7 @@ interface MenuDefinition {
   items: MenuItem[];
 }
 
-const menuOrder: MenuName[] = ["file", "view", "help"];
+const menuOrder: MenuName[] = ["file", "view", "tools", "help"];
 
 export function MenuBar() {
   const [openMenu, setOpenMenu] = useState<MenuName>();
@@ -71,6 +78,33 @@ export function MenuBar() {
           shortcut: "−",
           disabled: !hasImage,
           action: () => executeViewerCommand("zoomOut"),
+        },
+      ],
+    },
+    {
+      name: "tools",
+      label: "Tools",
+      items: [
+        {
+          label: "Calculate Statistics",
+          disabled: !hasImage,
+          action: requestStatistics,
+        },
+        {
+          label: "Auto-Contrast",
+          disabled: !hasImage,
+          separatorBefore: true,
+          action: autoContrast,
+        },
+        {
+          label: "Reset Contrast",
+          disabled: !hasImage,
+          action: resetDynamicRange,
+        },
+        {
+          label: "Recalculate Histogram",
+          disabled: !hasImage,
+          action: requestHistogram,
         },
       ],
     },
