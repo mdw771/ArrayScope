@@ -31,6 +31,10 @@ beforeEach(() => {
     histogram: undefined,
     histogramStale: true,
     statistics: undefined,
+    lineProfile: undefined,
+    lineProfilePending: false,
+    lineProfileOpen: false,
+    error: undefined,
     calculationPending: undefined,
     autoContrastPending: false,
     resetRangePending: false,
@@ -216,6 +220,29 @@ describe("no-selection analysis behavior", () => {
 });
 
 describe("menu behavior", () => {
+  it("reports an error when plotting without a line selection", () => {
+    controller.executeViewerCommand("plotLineProfile");
+
+    expect(posted).toHaveLength(0);
+    expect(store.useViewerStore.getState().error?.message).toContain("requires a line selection");
+  });
+
+  it("requests a full-resolution profile for the current line selection", () => {
+    const line = { type: "line" as const, x0: 0.25, y0: 1, x1: 8.5, y1: 4, widthPixels: 1 };
+    store.useViewerStore.setState({ selection: line });
+
+    controller.executeViewerCommand("plotLineProfile");
+
+    expect(posted.at(-1)).toMatchObject({
+      type: "computeLineProfile",
+      request: { sliceIndex: 0, line },
+    });
+    expect(store.useViewerStore.getState()).toMatchObject({
+      lineProfilePending: true,
+      lineProfileOpen: true,
+    });
+  });
+
   it("sends native host actions to the extension", () => {
     const actions: MenuAction[] = [
       "open",

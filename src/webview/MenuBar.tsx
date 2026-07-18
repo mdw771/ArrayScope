@@ -4,6 +4,7 @@ import {
   autoContrast,
   executeViewerCommand,
   requestHistogram,
+  requestLineProfile,
   requestMenuAction,
   requestStatistics,
   resetDynamicRange,
@@ -89,6 +90,12 @@ export function MenuBar() {
           label: "Calculate Statistics",
           disabled: !hasImage,
           action: requestStatistics,
+        },
+        {
+          label: "Plot Line Profile",
+          shortcut: navigator.userAgent.includes("Mac") ? "⌘K" : "Ctrl+K",
+          disabled: !hasImage,
+          action: requestLineProfile,
         },
         {
           label: "Auto-Contrast",

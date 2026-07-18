@@ -6,6 +6,8 @@ import {
   type ImageMetadata,
   type ImageTile,
   type ImageTileRequest,
+  type LineProfileRequest,
+  type LineProfileResult,
   type SamplePixelRequest,
   type SamplePixelResult,
   type ScientificImageDataSource,
@@ -181,6 +183,90 @@ export abstract class BaseImageDataSource implements ScientificImageDataSource {
       magnitude: Math.hypot(real, imaginary),
       phase: Math.atan2(imaginary, real),
     };
+  }
+
+  async computeLineProfile(
+    request: LineProfileRequest,
+    signal?: AbortSignal,
+  ): Promise<LineProfileResult> {
+    throwIfCancelled(signal);
+    this.assertOpen();
+    this.validateSlice(request.sliceIndex);
+    await this.assertSourceUnchanged();
+    throwIfCancelled(signal);
+    this.assertOpen();
+
+    const maximumX = this.metadata.width - 1;
+    const maximumY = this.metadata.height - 1;
+    const startX = clamp(request.line.x0, 0, maximumX);
+    const startY = clamp(request.line.y0, 0, maximumY);
+    const endX = clamp(request.line.x1, 0, maximumX);
+    const endY = clamp(request.line.y1, 0, maximumY);
+    const deltaX = endX - startX;
+    const deltaY = endY - startY;
+    const length = Math.hypot(deltaX, deltaY);
+    const distances = Array.from({ length: Math.floor(length) + 1 }, (_, index) => index);
+    if (distances.length === 0) distances.push(0);
+    if (length - distances.at(-1)! > 1e-9) distances.push(length);
+    const points = distances.map((distance) => {
+      const fraction = length === 0 ? 0 : distance / length;
+      return { x: startX + deltaX * fraction, y: startY + deltaY * fraction };
+    });
+
+    const neededPixels = new Map<number, Set<number>>();
+    for (const point of points) {
+      const x0 = Math.floor(point.x);
+      const y0 = Math.floor(point.y);
+      const x1 = Math.min(maximumX, x0 + 1);
+      const y1 = Math.min(maximumY, y0 + 1);
+      for (const [x, y] of [[x0, y0], [x1, y0], [x0, y1], [x1, y1]] as const) {
+        const row = neededPixels.get(y) ?? new Set<number>();
+        row.add(x);
+        neededPixels.set(y, row);
+      }
+    }
+
+    const decodedPixels = new Map<string, ReturnType<typeof decodeValue>>();
+    for (const [y, xs] of [...neededPixels].sort(([left], [right]) => left - right)) {
+      const sorted = [...xs].sort((left, right) => left - right);
+      for (let first = 0; first < sorted.length;) {
+        let last = first;
+        while (last + 1 < sorted.length && sorted[last + 1] === sorted[last]! + 1) last += 1;
+        const start = sorted[first]!;
+        const pixelCount = sorted[last]! - start + 1;
+        const data = await this.readRegion(request.sliceIndex, start, y, pixelCount, 1, 1, signal);
+        throwIfCancelled(signal);
+        this.assertOpen();
+        if (data.byteLength !== pixelCount * DTYPE_BYTES[this.metadata.dtype]) {
+          throw new Error("Decoder returned an unexpected amount of image data.");
+        }
+        const view = new DataView(data);
+        for (let offset = 0; offset < pixelCount; offset += 1) {
+          decodedPixels.set(
+            `${start + offset},${y}`,
+            decodeValue(view, offset * DTYPE_BYTES[this.metadata.dtype], this.metadata.dtype, true),
+          );
+        }
+        first = last + 1;
+      }
+    }
+
+    if (this.metadata.isComplex) {
+      const magnitudes: number[] = [];
+      const phases: number[] = [];
+      for (const point of points) {
+        const real = bilinearComponent(point.x, point.y, decodedPixels, "real");
+        const imaginary = bilinearComponent(point.x, point.y, decodedPixels, "imaginary");
+        magnitudes.push(Math.hypot(real, imaginary));
+        phases.push(Math.atan2(imaginary, real));
+      }
+      return { ...request, distances, magnitudes, phases };
+    }
+
+    const values = points.map((point) =>
+      bilinearComponent(point.x, point.y, decodedPixels, "scalar")
+    );
+    return { ...request, distances, values };
   }
 
   async computeStatistics(request: StatisticsRequest, signal?: AbortSignal): Promise<StatisticsResult> {
@@ -363,6 +449,51 @@ export class DataSourceCancelledError extends Error {
 
 export function throwIfCancelled(signal?: AbortSignal): void {
   if (signal?.aborted) throw new DataSourceCancelledError();
+}
+
+function clamp(value: number, minimum: number, maximum: number): number {
+  return Math.max(minimum, Math.min(maximum, value));
+}
+
+function bilinearComponent(
+  x: number,
+  y: number,
+  pixels: ReadonlyMap<string, ReturnType<typeof decodeValue>>,
+  component: "scalar" | "real" | "imaginary",
+): number {
+  const x0 = Math.floor(x);
+  const y0 = Math.floor(y);
+  const x1 = Math.ceil(x);
+  const y1 = Math.ceil(y);
+  const top = interpolate(
+    pixelComponent(pixels, x0, y0, component),
+    pixelComponent(pixels, x1, y0, component),
+    x - x0,
+  );
+  const bottom = interpolate(
+    pixelComponent(pixels, x0, y1, component),
+    pixelComponent(pixels, x1, y1, component),
+    x - x0,
+  );
+  return interpolate(top, bottom, y - y0);
+}
+
+function pixelComponent(
+  pixels: ReadonlyMap<string, ReturnType<typeof decodeValue>>,
+  x: number,
+  y: number,
+  component: "scalar" | "real" | "imaginary",
+): number {
+  const pixel = pixels.get(`${x},${y}`);
+  if (!pixel) throw new Error("Line profile interpolation is missing a source pixel.");
+  if (component === "scalar") return pixel.scalar ?? Number.NaN;
+  return pixel[component] ?? Number.NaN;
+}
+
+function interpolate(start: number, end: number, fraction: number): number {
+  if (fraction <= Number.EPSILON) return start;
+  if (fraction >= 1 - Number.EPSILON) return end;
+  return start + (end - start) * fraction;
 }
 
 export function updateMoments(moments: RunningMoments, value: number): void {

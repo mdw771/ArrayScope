@@ -1,5 +1,6 @@
 import { changeSlice } from "./controller";
 import { ImageViewport } from "./ImageViewport";
+import { LineProfileWindow } from "./LineProfileWindow";
 import { MenuBar } from "./MenuBar";
 import { OverlayControls } from "./OverlayControls";
 import { SidePanels } from "./SidePanels";
@@ -38,6 +39,7 @@ function Viewer({ metadata }: { metadata: NonNullable<ReturnType<typeof useViewe
           )}
           {metadata.sliceCount > 1 && !unsupported && <StackControls />}
           {!scalar && !unsupported && <OverlayControls />}
+          {!scalar && !unsupported && <LineProfileWindow />}
         </section>
         <SidePanels />
       </div>

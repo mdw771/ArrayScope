@@ -22,6 +22,7 @@ let requestId = 1;
 let latestHistogramRequest = 0;
 let latestStatisticsRequest = 0;
 let latestSampleRequest = 0;
+let latestLineProfileRequest = 0;
 const pendingTiles = new Map<number, string>();
 const pendingTileKeys = new Set<string>();
 const pendingOverlayTiles = new Map<number, string>();
@@ -145,6 +146,9 @@ function handleHostMessage(message: HostToWebviewMessage): void {
     case "statistics":
       if (message.result.requestId === latestStatisticsRequest) state.setStatistics(message.result);
       break;
+    case "lineProfile":
+      if (message.result.requestId === latestLineProfileRequest) state.setLineProfile(message.result);
+      break;
     case "sample":
       if (
         message.result.requestId === latestSampleRequest &&
@@ -162,6 +166,7 @@ function handleHostMessage(message: HostToWebviewMessage): void {
         if (key) pendingTileKeys.delete(key);
         pendingTiles.delete(message.requestId);
         releasePendingOverlayTile(message.requestId);
+        if (message.requestId === latestLineProfileRequest) state.setLineProfilePending(false);
       }
       state.setError({ message: message.message, details: message.details });
       break;
@@ -240,6 +245,26 @@ export function requestStatistics(): void {
       sliceIndex: state.currentSlice,
       selection,
       complexMode: state.metadata.isComplex ? state.complexMode : undefined,
+    },
+  });
+}
+
+export function requestLineProfile(): void {
+  const state = useViewerStore.getState();
+  if (!state.metadata) return;
+  if (state.selection?.type !== "line") {
+    state.setError({ message: "Plot line profile requires a line selection." });
+    return;
+  }
+  latestLineProfileRequest = nextRequestId();
+  state.setError(undefined);
+  state.beginLineProfile();
+  postMessage({
+    type: "computeLineProfile",
+    request: {
+      requestId: latestLineProfileRequest,
+      sliceIndex: state.currentSlice,
+      line: state.selection,
     },
   });
 }
@@ -485,6 +510,9 @@ export function executeViewerCommand(command: ViewerCommand): void {
   switch (command) {
     case "computeStatistics":
       requestStatistics();
+      break;
+    case "plotLineProfile":
+      requestLineProfile();
       break;
     case "autoContrast":
       autoContrast();

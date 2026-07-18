@@ -38,6 +38,7 @@ async function testCommands(): Promise<void> {
     "scientificImageViewer.tool.polygon",
     "scientificImageViewer.tool.sampler",
     "scientificImageViewer.computeStatistics",
+    "scientificImageViewer.plotLineProfile",
     "scientificImageViewer.tool.magnifier",
     "scientificImageViewer.tool.pan",
   ]) {

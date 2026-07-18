@@ -82,8 +82,10 @@ class ScientificImageEditorProvider
     const requestAbortController = new AbortController();
     let histogramAbortController: AbortController | undefined;
     let statisticsAbortController: AbortController | undefined;
+    let lineProfileAbortController: AbortController | undefined;
     let latestHistogramRequest = 0;
     let latestStatisticsRequest = 0;
+    let latestLineProfileRequest = 0;
     webviewPanel.onDidChangeViewState(() => {
       if (webviewPanel.active) this.#activePanel = webviewPanel;
     });
@@ -92,6 +94,7 @@ class ScientificImageEditorProvider
       requestAbortController.abort();
       histogramAbortController?.abort();
       statisticsAbortController?.abort();
+      lineProfileAbortController?.abort();
       this.#panels.delete(webviewPanel);
       if (this.#activePanel === webviewPanel) {
         this.#activePanel = [...this.#panels].find((panel) => panel.active);
@@ -274,6 +277,31 @@ class ScientificImageEditorProvider
             .finally(() => {
               if (statisticsAbortController === calculationController) {
                 statisticsAbortController = undefined;
+              }
+            });
+          break;
+        }
+        case "computeLineProfile": {
+          lineProfileAbortController?.abort();
+          lineProfileAbortController = new AbortController();
+          const calculationController = lineProfileAbortController;
+          latestLineProfileRequest = message.request.requestId;
+          void this.#computeScheduler
+            .enqueue(0, () => {
+              if (message.request.requestId !== latestLineProfileRequest) {
+                throw new SupersededRequestError();
+              }
+              return dataSource.computeLineProfile(message.request, calculationController.signal);
+            }, calculationController.signal)
+            .then((result) => send({ type: "lineProfile", result }))
+            .catch((error) =>
+              error instanceof SupersededRequestError || isCancellationError(error)
+                ? undefined
+                : send(errorMessage(error, message.request.requestId)),
+            )
+            .finally(() => {
+              if (lineProfileAbortController === calculationController) {
+                lineProfileAbortController = undefined;
               }
             });
           break;
@@ -498,6 +526,13 @@ function isWebviewMessage(value: unknown): value is WebviewToHostMessage {
         integer(value.request.sliceIndex) &&
         optionalSelection(value.request.selection) &&
         optionalComplexMode(value.request.complexMode);
+    case "computeLineProfile":
+      return isRecord(value.request) &&
+        integer(value.request.requestId) &&
+        integer(value.request.sliceIndex) &&
+        isRecord(value.request.line) &&
+        value.request.line.type === "line" &&
+        finiteNumbers(value.request.line, ["x0", "y0", "x1", "y1", "widthPixels"]);
     case "samplePixel":
       return isRecord(value.request) &&
         integer(value.request.requestId) &&
@@ -630,6 +665,7 @@ export function activate(context: vscode.ExtensionContext): void {
     "scientificImageViewer.tool.polygon": "tool.polygon",
     "scientificImageViewer.tool.sampler": "tool.sampler",
     "scientificImageViewer.computeStatistics": "computeStatistics",
+    "scientificImageViewer.plotLineProfile": "plotLineProfile",
     "scientificImageViewer.tool.magnifier": "tool.magnifier",
     "scientificImageViewer.tool.pan": "tool.pan",
     "scientificImageViewer.autoContrast": "autoContrast",

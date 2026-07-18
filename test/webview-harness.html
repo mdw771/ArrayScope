@@ -76,6 +76,21 @@
             minimum: 0, maximum: 15, median: 7.5, standardDeviation: 4.609772,
             variance: 21.25, kurtosis: 1.790588, approximateMedian: false,
           }});
+        } else if (message.type === "computeLineProfile") {
+          const { line, requestId, sliceIndex } = message.request;
+          const length = Math.hypot(line.x1 - line.x0, line.y1 - line.y0);
+          const distances = Array.from({ length: Math.floor(length) + 1 }, (_, index) => index);
+          if (length - distances[distances.length - 1] > 1e-9) distances.push(length);
+          const sampled = distances.map(distance => {
+            const fraction = length === 0 ? 0 : distance / length;
+            const x = Math.max(0, Math.min(3, line.x0 + (line.x1 - line.x0) * fraction));
+            const y = Math.max(0, Math.min(3, line.y0 + (line.y1 - line.y0) * fraction));
+            const x0 = Math.floor(x), x1 = Math.ceil(x), y0 = Math.floor(y), y1 = Math.ceil(y);
+            const top = values[y0 * 4 + x0] * (1 - (x - x0)) + values[y0 * 4 + x1] * (x - x0);
+            const bottom = values[y1 * 4 + x0] * (1 - (x - x0)) + values[y1 * 4 + x1] * (x - x0);
+            return top * (1 - (y - y0)) + bottom * (y - y0);
+          });
+          respond({ type: "lineProfile", result: { requestId, sliceIndex, line, distances, values: sampled }});
         } else if (message.type === "samplePixel") {
           const { x, y, requestId, sliceIndex } = message.request;
           respond({ type: "sample", result: { requestId, sliceIndex, x, y, value: values[y * 4 + x] }});

@@ -3,6 +3,7 @@ import type {
   ComplexDisplayMode,
   HistogramResult,
   ImageMetadata,
+  LineProfileResult,
   SamplePixelResult,
   Selection,
   StatisticsResult,
@@ -38,6 +39,9 @@ export interface ViewerState {
   draftPolygon?: DraftPolygon;
   sample?: SamplePixelResult;
   sampleLoading?: { x: number; y: number };
+  lineProfile?: LineProfileResult;
+  lineProfilePending: boolean;
+  lineProfileOpen: boolean;
   zoom: number;
   panX: number;
   panY: number;
@@ -65,6 +69,10 @@ export interface ViewerState {
   setDraftPolygon(polygon?: DraftPolygon): void;
   setSample(sample?: SamplePixelResult): void;
   setSampleLoading(point?: { x: number; y: number }): void;
+  beginLineProfile(): void;
+  setLineProfile(profile: LineProfileResult): void;
+  closeLineProfile(): void;
+  setLineProfilePending(pending: boolean): void;
   setView(view: Partial<Pick<ViewerState, "zoom" | "panX" | "panY">>): void;
   setViewport(width: number, height: number): void;
   setColormap(colormap: string): void;
@@ -99,6 +107,8 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
   ranges: { phase: [-Math.PI, Math.PI] },
   histogramStale: true,
   statisticsStale: false,
+  lineProfilePending: false,
+  lineProfileOpen: false,
   autoContrastPending: false,
   resetRangePending: false,
   generation: 1,
@@ -133,6 +143,10 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
   setDraftPolygon: (draftPolygon) => set({ draftPolygon }),
   setSample: (sample) => set({ sample, sampleLoading: undefined }),
   setSampleLoading: (sampleLoading) => set({ sampleLoading }),
+  beginLineProfile: () => set({ lineProfile: undefined, lineProfilePending: true, lineProfileOpen: true }),
+  setLineProfile: (lineProfile) => set({ lineProfile, lineProfilePending: false }),
+  closeLineProfile: () => set({ lineProfileOpen: false }),
+  setLineProfilePending: (lineProfilePending) => set({ lineProfilePending }),
   setView: (view) => set((state) => ({ ...view, generation: state.generation + 1 })),
   setViewport: (viewportWidth, viewportHeight) => {
     const state = get();
@@ -198,7 +212,11 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
         ? { ...state.overlay, tileRevision: state.overlay.tileRevision + 1 }
         : undefined,
     })),
-  setError: (error) => set({ error, calculationPending: undefined, sampleLoading: undefined }),
+  setError: (error) => set({
+    error,
+    calculationPending: undefined,
+    sampleLoading: undefined,
+  }),
 }));
 
 export function stableRange(lower: number, upper: number): [number, number] {

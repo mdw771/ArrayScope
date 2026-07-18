@@ -161,39 +161,42 @@ input, select {
 .sample-dismiss:hover { background: var(--vscode-toolbar-hoverBackground); }
 .sample-loading { left: 8px; bottom: 8px; top: auto; min-width: 0; }
 
-.overlay-controls {
+.floating-window {
   position: absolute;
-  z-index: 12;
-  width: min(310px, calc(100% - 16px));
   border: 1px solid var(--vscode-widget-border);
   border-radius: 4px;
   color: var(--vscode-editorHoverWidget-foreground);
   background: var(--vscode-editorHoverWidget-background);
   box-shadow: 0 3px 12px var(--vscode-widget-shadow);
+  overflow: hidden;
 }
-.overlay-controls-title {
+.floating-window-title {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  min-height: 30px;
-  padding-left: 9px;
+  min-height: 32px;
+  padding-left: 10px;
   border-bottom: 1px solid var(--vscode-widget-border);
   cursor: move;
   user-select: none;
   touch-action: none;
   font-weight: 600;
 }
-.overlay-controls-title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.overlay-controls-title button {
-  width: 29px;
-  height: 28px;
+.floating-window-title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.floating-window-title button {
+  width: 32px;
+  height: 31px;
   padding: 0;
   border: 0;
   color: inherit;
   background: transparent;
-  font-size: 18px;
+  font-size: 19px;
 }
-.overlay-controls-title button:hover { background: var(--vscode-toolbar-hoverBackground); }
+.floating-window-title button:hover { background: var(--vscode-toolbar-hoverBackground); }
+.overlay-controls {
+  z-index: 12;
+  width: min(310px, calc(100% - 16px));
+}
 .overlay-transparency {
   display: grid;
   grid-template-columns: auto minmax(70px, 1fr) 38px;
@@ -216,6 +219,37 @@ input, select {
   background: var(--vscode-textCodeBlock-background);
   font-variant-numeric: tabular-nums;
 }
+
+.line-profile-window {
+  z-index: 14;
+  width: min(760px, calc(100% - 32px));
+  min-width: min(420px, calc(100% - 32px));
+  min-height: 260px;
+  max-width: 100%;
+  max-height: 100%;
+  box-shadow: 0 5px 18px var(--vscode-widget-shadow);
+}
+.line-profile-content { min-height: 230px; max-height: calc(100vh - 150px); overflow: auto; background: var(--vscode-editor-background); }
+.line-profile-loading { min-height: 230px; display: grid; grid-auto-flow: column; place-content: center; align-items: center; gap: 8px; color: var(--vscode-descriptionForeground); }
+.line-profile-loading .spinner { width: 14px; height: 14px; margin: 0; }
+.line-profile-chart-shell { padding: 8px 10px 7px; }
+.line-profile-legend { display: flex; justify-content: center; gap: 22px; min-height: 18px; font-size: 12px; }
+.line-profile-legend span::before { content: ""; display: inline-block; width: 16px; margin: 0 5px 3px 0; border-top: 2px solid currentColor; }
+.legend-left { color: var(--vscode-charts-blue, #3794ff); }
+.legend-right { color: var(--vscode-charts-orange, #d18616); }
+.line-profile-chart { display: block; width: 100%; max-height: 390px; overflow: visible; }
+.profile-grid { stroke: var(--vscode-panel-border); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.profile-axis { stroke: var(--vscode-foreground); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.profile-tick, .profile-axis-label { fill: var(--vscode-descriptionForeground); font-family: var(--vscode-font-family); font-size: 11px; }
+.profile-axis-label { font-size: 12px; }
+.profile-right-tick { fill: var(--vscode-charts-orange, #d18616); }
+.profile-series { fill: none; stroke-width: 1.7; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.profile-left-series { stroke: var(--vscode-charts-blue, #3794ff); }
+.profile-right-series { stroke: var(--vscode-charts-orange, #d18616); }
+.profile-point { stroke: var(--vscode-editor-background); stroke-width: 0.7; vector-effect: non-scaling-stroke; }
+.profile-left-point { fill: var(--vscode-charts-blue, #3794ff); }
+.profile-right-point { fill: var(--vscode-charts-orange, #d18616); }
+.line-profile-summary { margin-top: -2px; color: var(--vscode-descriptionForeground); text-align: center; font-size: 11px; }
 
 .stack-controls { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-top: 1px solid var(--vscode-panel-border); background: var(--vscode-editorGroupHeader-tabsBackground); }
 .stack-controls > input[type="range"] { flex: 1; }

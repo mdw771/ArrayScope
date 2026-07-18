@@ -1,76 +1,21 @@
-import { useRef, useState, type PointerEvent } from "react";
 import { removeOverlay } from "./controller";
+import { FloatingWindow } from "./FloatingWindow";
 import { useViewerStore } from "./store";
-
-interface WindowDrag {
-  pointerId: number;
-  clientX: number;
-  clientY: number;
-  left: number;
-  top: number;
-}
 
 export function OverlayControls() {
   const overlay = useViewerStore((state) => state.overlay);
   const setTransparency = useViewerStore((state) => state.setOverlayTransparency);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const dragRef = useRef<WindowDrag | undefined>(undefined);
-  const [position, setPosition] = useState({ left: 16, top: 16 });
   if (!overlay) return null;
 
-  const startDrag = (event: PointerEvent<HTMLDivElement>): void => {
-    if (event.button !== 0 || (event.target as Element).closest("button")) return;
-    dragRef.current = {
-      pointerId: event.pointerId,
-      clientX: event.clientX,
-      clientY: event.clientY,
-      left: position.left,
-      top: position.top,
-    };
-    event.currentTarget.setPointerCapture(event.pointerId);
-  };
-
-  const moveWindow = (event: PointerEvent<HTMLDivElement>): void => {
-    const drag = dragRef.current;
-    const root = rootRef.current;
-    const parent = root?.parentElement;
-    if (!drag || !root || !parent || drag.pointerId !== event.pointerId) return;
-    const left = drag.left + event.clientX - drag.clientX;
-    const top = drag.top + event.clientY - drag.clientY;
-    setPosition({
-      left: Math.max(0, Math.min(parent.clientWidth - root.offsetWidth, left)),
-      top: Math.max(0, Math.min(parent.clientHeight - root.offsetHeight, top)),
-    });
-  };
-
-  const stopDrag = (event: PointerEvent<HTMLDivElement>): void => {
-    if (dragRef.current?.pointerId === event.pointerId) dragRef.current = undefined;
-  };
-
   return (
-    <div
-      ref={rootRef}
+    <FloatingWindow
       className="overlay-controls"
-      role="dialog"
-      aria-label="Image overlay controls"
-      style={position}
+      ariaLabel="Image overlay controls"
+      closeLabel="Remove image overlay"
+      onClose={removeOverlay}
+      title={overlay.metadata.fileName}
+      titleTooltip={overlay.metadata.fileName}
     >
-      <div
-        className="overlay-controls-title"
-        onPointerDown={startDrag}
-        onPointerMove={moveWindow}
-        onPointerUp={stopDrag}
-        onPointerCancel={stopDrag}
-      >
-        <span title={overlay.metadata.fileName}>{overlay.metadata.fileName}</span>
-        <button
-          type="button"
-          aria-label="Remove image overlay"
-          title="Remove image overlay"
-          onPointerDown={(event) => event.stopPropagation()}
-          onClick={removeOverlay}
-        >×</button>
-      </div>
       <label className="overlay-transparency">
         <span>Transparency</span>
         <input
@@ -88,7 +33,7 @@ export function OverlayControls() {
         <code>x: {formatCoordinate(overlay.offsetX)} px</code>
         <code>y: {formatCoordinate(overlay.offsetY)} px</code>
       </div>
-    </div>
+    </FloatingWindow>
   );
 }
 

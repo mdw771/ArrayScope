@@ -162,6 +162,22 @@ export interface SamplePixelResult {
   phase?: number;
 }
 
+export interface LineProfileRequest {
+  requestId: number;
+  sliceIndex: number;
+  line: LineSelection;
+}
+
+export interface LineProfileResult {
+  requestId: number;
+  sliceIndex: number;
+  line: LineSelection;
+  distances: number[];
+  values?: number[];
+  magnitudes?: number[];
+  phases?: number[];
+}
+
 export type ViewerTool =
   | "rectangle"
   | "ellipse"
@@ -174,6 +190,7 @@ export type ViewerTool =
 export type ViewerCommand =
   | `tool.${ViewerTool}`
   | "computeStatistics"
+  | "plotLineProfile"
   | "autoContrast"
   | "clearSelection"
   | "fitToWindow"
@@ -208,6 +225,7 @@ export type WebviewToHostMessage =
   | { type: "getTiles"; requests: ImageTileRequest[] }
   | { type: "computeHistogram"; request: HistogramRequest }
   | { type: "computeStatistics"; request: StatisticsRequest }
+  | { type: "computeLineProfile"; request: LineProfileRequest }
   | { type: "samplePixel"; request: SamplePixelRequest };
 
 export interface ViewerSettings {
@@ -225,6 +243,7 @@ export type HostToWebviewMessage =
   | { type: "tile"; tile: ImageTile }
   | { type: "histogram"; result: HistogramResult }
   | { type: "statistics"; result: StatisticsResult }
+  | { type: "lineProfile"; result: LineProfileResult }
   | { type: "sample"; result: SamplePixelResult }
   | { type: "command"; command: ViewerCommand }
   | { type: "error"; requestId?: number; message: string; details?: string };
@@ -235,6 +254,7 @@ export interface ScientificImageDataSource {
   getTile(request: ImageTileRequest, signal?: AbortSignal): Promise<ImageTile>;
   computeHistogram(request: HistogramRequest, signal?: AbortSignal): Promise<HistogramResult>;
   computeStatistics(request: StatisticsRequest, signal?: AbortSignal): Promise<StatisticsResult>;
+  computeLineProfile(request: LineProfileRequest, signal?: AbortSignal): Promise<LineProfileResult>;
   samplePixel(request: SamplePixelRequest, signal?: AbortSignal): Promise<SamplePixelResult>;
   dispose(): Promise<void>;
 }

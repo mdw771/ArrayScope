@@ -27,6 +27,34 @@ class MemoryDataSource extends BaseImageDataSource {
   protected async closeSource(): Promise<void> {}
 }
 
+class ComplexMemoryDataSource extends BaseImageDataSource {
+  constructor(readonly values: Array<readonly [number, number]>, width: number, height: number) {
+    const metadata: ImageMetadata = {
+      uri: "memory:complex", fileName: "complex", format: "npy", shape: [height, width],
+      width, height, sliceCount: 1, dtype: "complex128", byteOrder: "little",
+      fileSizeBytes: values.length * 16, totalElementCount: values.length, isComplex: true,
+    };
+    super(metadata, 1024 * 1024);
+  }
+
+  protected async readRegion(
+    _slice: number, x: number, y: number, outputWidth: number, outputHeight: number, step: number,
+  ): Promise<ArrayBuffer> {
+    const output = new Float64Array(outputWidth * outputHeight * 2);
+    for (let oy = 0; oy < outputHeight; oy += 1) {
+      for (let ox = 0; ox < outputWidth; ox += 1) {
+        const value = this.values[(y + oy * step) * this.metadata.width + x + ox * step]!;
+        const offset = (oy * outputWidth + ox) * 2;
+        output[offset] = value[0];
+        output[offset + 1] = value[1];
+      }
+    }
+    return output.buffer;
+  }
+  protected async assertSourceUnchanged(): Promise<void> {}
+  protected async closeSource(): Promise<void> {}
+}
+
 class DelayedDataSource extends BaseImageDataSource {
   readonly readStarted: Promise<void>;
   readonly #readPending: Promise<void>;
@@ -125,6 +153,35 @@ describe("format-independent data source calculations", () => {
     expect([...new Float64Array(tile.data)]).toEqual([0, 2, 8, 10]);
     await expect(source.samplePixel({ requestId: 5, sliceIndex: 0, x: 2, y: 1 }))
       .resolves.toMatchObject({ value: 6 });
+  });
+
+  it("samples a line every pixel and bilinearly interpolates fractional positions", async () => {
+    const source = new MemoryDataSource([0, 10, 20, 30], 2, 2);
+    const result = await source.computeLineProfile({
+      requestId: 8,
+      sliceIndex: 0,
+      line: { type: "line", x0: 0, y0: 0, x1: 1, y1: 1, widthPixels: 1 },
+    });
+
+    expect(result.distances).toEqual([0, 1, Math.SQRT2]);
+    expect(result.values).toHaveLength(3);
+    expect(result.values![0]).toBe(0);
+    expect(result.values![1]).toBeCloseTo(15 * Math.SQRT2);
+    expect(result.values![2]).toBe(30);
+  });
+
+  it("interpolates complex components before deriving magnitude and phase", async () => {
+    const source = new ComplexMemoryDataSource([[1, 0], [0, 1], [-1, 0]], 3, 1);
+    const result = await source.computeLineProfile({
+      requestId: 9,
+      sliceIndex: 0,
+      line: { type: "line", x0: 0.5, y0: 0, x1: 1.5, y1: 0, widthPixels: 1 },
+    });
+
+    expect(result.values).toBeUndefined();
+    expect(result.magnitudes).toEqual([Math.SQRT1_2, Math.SQRT1_2]);
+    expect(result.phases![0]).toBeCloseTo(Math.PI / 4);
+    expect(result.phases![1]).toBeCloseTo(3 * Math.PI / 4);
   });
 
   it("does not cache a tile whose read finishes after disposal", async () => {
