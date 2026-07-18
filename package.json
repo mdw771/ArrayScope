@@ -2,7 +2,7 @@
   "name": "array-scope",
   "displayName": "ArrayScope Scientific Image Viewer",
   "description": "Read-only, progressive scientific image viewer for NPY and TIFF files.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "AmidStars",
   "icon": "images/icon.png",
   "license": "MIT",
