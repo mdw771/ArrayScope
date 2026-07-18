@@ -92,7 +92,7 @@
       { "command": "scientificImageViewer.tool.line", "key": "l", "when": "activeCustomEditorId == scientificImageViewer.viewer && !inputFocus && !terminalFocus" },
       { "command": "scientificImageViewer.tool.polygon", "key": "p", "when": "activeCustomEditorId == scientificImageViewer.viewer && !inputFocus && !terminalFocus" },
       { "command": "scientificImageViewer.tool.sampler", "key": "i", "when": "activeCustomEditorId == scientificImageViewer.viewer && !inputFocus && !terminalFocus" },
-      { "command": "scientificImageViewer.computeStatistics", "key": "ctrl+alt+shift+s", "mac": "cmd+alt+shift+s", "when": "activeCustomEditorId == scientificImageViewer.viewer && !inputFocus && !terminalFocus" },
+      { "command": "scientificImageViewer.computeStatistics", "key": "ctrl+t", "mac": "cmd+t", "when": "activeCustomEditorId == scientificImageViewer.viewer && !inputFocus && !terminalFocus" },
       { "command": "scientificImageViewer.plotLineProfile", "key": "ctrl+k", "mac": "cmd+k", "when": "activeCustomEditorId == scientificImageViewer.viewer && !inputFocus && !terminalFocus" },
       { "command": "scientificImageViewer.tool.magnifier", "key": "z", "when": "activeCustomEditorId == scientificImageViewer.viewer && !inputFocus && !terminalFocus" },
       { "command": "scientificImageViewer.zoomOut", "key": "-", "when": "activeCustomEditorId == scientificImageViewer.viewer && !inputFocus && !terminalFocus" },

@@ -49,7 +49,7 @@ These shortcuts are active while an ArrayScope editor is active. They are disabl
 | `1` | Show actual pixels (1:1) |
 | `[` | Previous slice |
 | `]` | Next slice |
-| `Ctrl+Alt+Shift+S` (`Cmd+Alt+Shift+S` on macOS) | Calculate statistics |
+| `Ctrl+T` (`Cmd+T` on macOS) | Calculate statistics |
 | `Ctrl+K` (`Cmd+K` on macOS) | Plot the current line selection's pixel profile |
 | `Ctrl+Alt+Backspace` (`Cmd+Alt+Backspace` on macOS) | Clear selection |
 

@@ -88,6 +88,7 @@ export function MenuBar() {
       items: [
         {
           label: "Calculate Statistics",
+          shortcut: navigator.userAgent.includes("Mac") ? "⌘T" : "Ctrl+T",
           disabled: !hasImage,
           action: requestStatistics,
         },
