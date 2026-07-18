@@ -13,6 +13,7 @@ interface FloatingWindowProps {
   children: ReactNode;
   className?: string;
   closeLabel: string;
+  focusCloseButton?: boolean;
   initialPosition?: { left: number; top: number };
   onClose(): void;
   title: ReactNode;
@@ -24,6 +25,7 @@ export function FloatingWindow({
   children,
   className,
   closeLabel,
+  focusCloseButton = false,
   initialPosition = { left: 16, top: 16 },
   onClose,
   title,
@@ -84,6 +86,7 @@ export function FloatingWindow({
         <span title={titleTooltip}>{title}</span>
         <button
           type="button"
+          autoFocus={focusCloseButton}
           aria-label={closeLabel}
           title={closeLabel}
           onPointerDown={(event) => event.stopPropagation()}

@@ -126,7 +126,11 @@ export function MenuBar() {
       name: "help",
       label: "Help",
       items: [
-        { label: "Source Code on GitHub", action: hostAction("sourceCode") },
+        {
+          label: "Keyboard Shortcuts",
+          action: () => useViewerStore.getState().openKeyboardShortcuts(),
+        },
+        { label: "Source Code on GitHub", separatorBefore: true, action: hostAction("sourceCode") },
         { label: "Report an Issue", action: hostAction("reportIssue") },
       ],
     },

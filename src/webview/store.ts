@@ -42,6 +42,7 @@ export interface ViewerState {
   lineProfile?: LineProfileResult;
   lineProfilePending: boolean;
   lineProfileOpen: boolean;
+  keyboardShortcutsOpen: boolean;
   zoom: number;
   panX: number;
   panY: number;
@@ -73,6 +74,8 @@ export interface ViewerState {
   setLineProfile(profile: LineProfileResult): void;
   closeLineProfile(): void;
   setLineProfilePending(pending: boolean): void;
+  openKeyboardShortcuts(): void;
+  closeKeyboardShortcuts(): void;
   setView(view: Partial<Pick<ViewerState, "zoom" | "panX" | "panY">>): void;
   setViewport(width: number, height: number): void;
   setColormap(colormap: string): void;
@@ -109,6 +112,7 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
   statisticsStale: false,
   lineProfilePending: false,
   lineProfileOpen: false,
+  keyboardShortcutsOpen: false,
   autoContrastPending: false,
   resetRangePending: false,
   generation: 1,
@@ -147,6 +151,8 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
   setLineProfile: (lineProfile) => set({ lineProfile, lineProfilePending: false }),
   closeLineProfile: () => set({ lineProfileOpen: false }),
   setLineProfilePending: (lineProfilePending) => set({ lineProfilePending }),
+  openKeyboardShortcuts: () => set({ keyboardShortcutsOpen: true }),
+  closeKeyboardShortcuts: () => set({ keyboardShortcutsOpen: false }),
   setView: (view) => set((state) => ({ ...view, generation: state.generation + 1 })),
   setViewport: (viewportWidth, viewportHeight) => {
     const state = get();

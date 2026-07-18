@@ -34,6 +34,7 @@ beforeEach(() => {
     lineProfile: undefined,
     lineProfilePending: false,
     lineProfileOpen: false,
+    keyboardShortcutsOpen: false,
     error: undefined,
     calculationPending: undefined,
     autoContrastPending: false,
@@ -220,6 +221,14 @@ describe("no-selection analysis behavior", () => {
 });
 
 describe("menu behavior", () => {
+  it("opens and closes the keyboard shortcuts window", () => {
+    store.useViewerStore.getState().openKeyboardShortcuts();
+    expect(store.useViewerStore.getState().keyboardShortcutsOpen).toBe(true);
+
+    store.useViewerStore.getState().closeKeyboardShortcuts();
+    expect(store.useViewerStore.getState().keyboardShortcutsOpen).toBe(false);
+  });
+
   it("reports an error when plotting without a line selection", () => {
     controller.executeViewerCommand("plotLineProfile");
 

@@ -1,5 +1,6 @@
 import { changeSlice } from "./controller";
 import { ImageViewport } from "./ImageViewport";
+import { KeyboardShortcutsWindow } from "./KeyboardShortcutsWindow";
 import { LineProfileWindow } from "./LineProfileWindow";
 import { MeasurementBar } from "./MeasurementBar";
 import { MenuBar } from "./MenuBar";
@@ -15,6 +16,7 @@ export function App() {
     <main className="app-shell">
       <MenuBar />
       {metadata ? <Viewer metadata={metadata} /> : <Startup />}
+      <KeyboardShortcutsWindow />
       {error && <ErrorNotice />}
     </main>
   );
