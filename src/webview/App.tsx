@@ -1,6 +1,7 @@
 import { changeSlice } from "./controller";
 import { ImageViewport } from "./ImageViewport";
 import { LineProfileWindow } from "./LineProfileWindow";
+import { MeasurementBar } from "./MeasurementBar";
 import { MenuBar } from "./MenuBar";
 import { OverlayControls } from "./OverlayControls";
 import { SidePanels } from "./SidePanels";
@@ -33,9 +34,12 @@ function Viewer({ metadata }: { metadata: NonNullable<ReturnType<typeof useViewe
           ) : unsupported ? (
             <div className="unsupported-message"><h2>Unsupported dimensionality</h2><p>ArrayScope displays 2D images and 3D stacks. This array has shape [{metadata.shape.join(", ")}].</p></div>
           ) : (
-            <div className={`canvas-grid ${metadata.isComplex ? "complex" : "scalar"}`}>
-              {metadata.isComplex ? <><ImageViewport mode="magnitude" /><ImageViewport mode="phase" /></> : <ImageViewport mode="scalar" />}
-            </div>
+            <>
+              <div className={`canvas-grid ${metadata.isComplex ? "complex" : "scalar"}`}>
+                {metadata.isComplex ? <><ImageViewport mode="magnitude" /><ImageViewport mode="phase" /></> : <ImageViewport mode="scalar" />}
+              </div>
+              <MeasurementBar />
+            </>
           )}
           {metadata.sliceCount > 1 && !unsupported && <StackControls />}
           {!scalar && !unsupported && <OverlayControls />}
