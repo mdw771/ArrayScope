@@ -16,3 +16,7 @@
 - Added live selection measurements, including bounds and dimensions for areas, ellipse centers, and line endpoints, length, and angle.
 - Added more keyboard shortcuts.
 - Added a Help item to show all available keyboard shortcuts. 
+
+## 0.2.1
+
+- Adjusted project description and readme file.

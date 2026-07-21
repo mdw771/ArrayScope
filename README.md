@@ -2,7 +2,7 @@
 
 <img src="images/icon.png" alt="ArrayScope logo" width="33%">
 
-ArrayScope is a read-only VS Code custom editor for scientific NPY and TIFF images. It runs entirely in TypeScript, JavaScript, and WebGL—no Python, Conda, Jupyter kernel, or project runtime is started.
+ArrayScope is a interactive VSCode exension for viewing and analyzing scientific NPY and TIFF images. It runs out-of-the-box - no environment setup is needed.
 
 <img src="images/screenshot.png" alt="ArrayScope displaying the magnitude and phase of a complex NPY image" width="90%">
 
