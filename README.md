@@ -85,23 +85,46 @@ TIFF support is limited to grayscale images. Pages must match the first page's d
 
 ## Development
 
-Requirements: Node.js 20 or newer and npm.
+Requirements: Node.js 20 or newer and npm. From a fresh checkout, install the
+locked dependencies and run the same fast checks used by CI:
 
 ```bash
-npm install
+npm ci
 npm run typecheck
 npm test
 npm run build
 ```
 
-Press `F5` from VS Code after building to launch an Extension Development Host, or run:
+Use `npm run test:watch` while developing to rerun unit tests after changes. Run
+an individual test file or a test matching a specific name with:
+
+```bash
+npm test -- test/geometry.test.ts
+npm test -- -t "selection rasterization"
+```
+
+To exercise the extension in a real VS Code Extension Development Host, run:
 
 ```bash
 npm run test:integration
+```
+
+The integration command downloads a matching VS Code test build on first use.
+On a headless Linux machine, run it through Xvfb:
+
+```bash
+xvfb-run --auto-servernum npm run test:integration
+```
+
+Press `F5` from VS Code after building to inspect the extension manually. To
+run the full release validation and produce a VSIX, run:
+
+```bash
 npm run package
 ```
 
-`test:integration` downloads a matching VS Code test build on first use. `package` produces a VSIX after type checking, unit tests, and bundling.
+`package` cleans generated output, type-checks, runs unit tests, bundles the
+extension, and packages it.
 
 ## Numerical definitions
 
