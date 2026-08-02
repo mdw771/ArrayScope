@@ -1,12 +1,14 @@
 # Changelog
 
-## 0.1.0
+## 0.2.2
 
-- Initial read-only NPY and grayscale TIFF custom editor.
-- Progressive extension-host overview/tile protocol and bounded local/remote caches.
-- WebGL2 scalar and synchronized complex rendering.
-- Selection, sampling, stack navigation, histograms, auto contrast, and statistics.
-- Unit, browser-harness, and VS Code extension-host smoke tests.
+- Removed the steppers in the dynamic range input fields.
+- Changed the dynamic range values to apply only when Enter is hit or when the input field loses focus.
+- Allow negative value input and prevented the `-` key from triggering zoom-out.
+
+## 0.2.1
+
+- Adjusted project description and readme file.
 
 ## 0.2.0
 
@@ -17,6 +19,10 @@
 - Added more keyboard shortcuts.
 - Added a Help item to show all available keyboard shortcuts. 
 
-## 0.2.1
+## 0.1.0
 
-- Adjusted project description and readme file.
+- Initial read-only NPY and grayscale TIFF custom editor.
+- Progressive extension-host overview/tile protocol and bounded local/remote caches.
+- WebGL2 scalar and synchronized complex rendering.
+- Selection, sampling, stack navigation, histograms, auto contrast, and statistics.
+- Unit, browser-harness, and VS Code extension-host smoke tests.
