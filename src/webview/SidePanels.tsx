@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ComplexDisplayMode } from "../shared/types";
 import {
   autoContrast,
@@ -8,6 +8,7 @@ import {
   resetDynamicRange,
 } from "./controller";
 import { exceedsAutomaticHistogramPixelLimit } from "./histogramGate";
+import { parseRangeInput, updateDynamicRange } from "./rangeInput";
 import { DEFAULT_RANGE, stableRange, useViewerStore } from "./store";
 
 const COLORMAPS = [
@@ -128,14 +129,11 @@ function HistogramPanel() {
     : range;
   const updateRange = (index: 0 | 1, value: number): void => {
     if (!Number.isFinite(value)) return;
-    const next: [number, number] = [range[0], range[1]];
-    next[index] = value;
-    const padding = Math.max(Math.abs(value) * 1e-6, 1e-6);
-    if (next[1] <= next[0]) {
-      if (index === 0) next[1] = value + padding;
-      else next[0] = value - padding;
-    }
-    useViewerStore.getState().setRange(mode, next);
+    const state = useViewerStore.getState();
+    const current = state.ranges[mode] ?? DEFAULT_RANGE;
+    const next = updateDynamicRange(current, index, value);
+    if (next[0] === current[0] && next[1] === current[1]) return;
+    state.setRange(mode, next);
   };
   return (
     <details className="panel histogram-panel" open>
@@ -171,8 +169,8 @@ function HistogramPanel() {
       <div className="histogram-axis"><span>{formatNumber(histogram?.minimum)}</span><span>{formatNumber(histogram?.maximum)}</span></div>
       <label className="checkbox-row"><input type="checkbox" checked={logCounts} onChange={(event) => setLogCounts(event.target.checked)} />Log count scale</label>
       <div className="range-inputs">
-        <label>Lower<input type="number" value={range[0]} step="any" onChange={(event) => updateRange(0, event.target.valueAsNumber)} /></label>
-        <label>Upper<input type="number" value={range[1]} step="any" onChange={(event) => updateRange(1, event.target.valueAsNumber)} /></label>
+        <DynamicRangeInput label="Lower" value={range[0]} onCommit={(value) => updateRange(0, value)} />
+        <DynamicRangeInput label="Upper" value={range[1]} onCommit={(value) => updateRange(1, value)} />
       </div>
       <label className="slider-label">Lower limit
         <input type="range" min={bounds[0]} max={bounds[1]} step="any" value={Math.max(bounds[0], Math.min(bounds[1], range[0]))} onChange={(event) => updateRange(0, event.target.valueAsNumber)} />
@@ -192,6 +190,51 @@ function HistogramPanel() {
         <Property label="NaN / +Inf / −Inf" value={`${histogram.nanCount} / ${histogram.positiveInfinityCount} / ${histogram.negativeInfinityCount}`} />
       </dl>}
     </details>
+  );
+}
+
+function DynamicRangeInput({
+  label,
+  value,
+  onCommit,
+}: {
+  label: string;
+  value: number;
+  onCommit(value: number): void;
+}) {
+  const [draft, setDraft] = useState(String(value));
+  const [editing, setEditing] = useState(false);
+
+  useEffect(() => {
+    if (!editing) setDraft(String(value));
+  }, [editing, value]);
+
+  const commit = (): void => {
+    const parsed = parseRangeInput(draft);
+    if (parsed === undefined) {
+      setDraft(String(value));
+      return;
+    }
+    onCommit(parsed);
+  };
+
+  return (
+    <label>{label}<input
+      type="text"
+      inputMode="decimal"
+      value={draft}
+      spellCheck={false}
+      onFocus={() => setEditing(true)}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={() => {
+        commit();
+        setEditing(false);
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") commit();
+        event.stopPropagation();
+      }}
+    /></label>
   );
 }
 

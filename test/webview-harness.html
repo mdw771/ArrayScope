@@ -43,7 +43,9 @@
       getState: () => savedState,
       setState: value => { savedState = value; },
       postMessage: message => {
-        if (message.type === "ready") {
+        if (message.type === "inputFocus") {
+          return;
+        } else if (message.type === "ready") {
           respond({
             type: "metadata",
             settings: { localCacheMB: 32, tileSize: 256, automaticHistogramPixelLimit: 1000000 },

@@ -211,6 +211,7 @@ export type MenuAction =
 
 export type WebviewToHostMessage =
   | { type: "ready" }
+  | { type: "inputFocus"; focused: boolean }
   | { type: "menuAction"; action: MenuAction }
   | { type: "removeOverlay"; overlayId: number }
   | {

@@ -7,6 +7,7 @@ import type {
   WebviewToHostMessage,
 } from "./shared/types";
 import { NpyImageDataSource } from "./host/npyDataSource";
+import { PanelInputFocusTracker } from "./host/panelInputFocus";
 import { RequestScheduler, ScheduledTaskCancelledError } from "./host/scheduler";
 import { TiffImageDataSource } from "./host/tiffDataSource";
 
@@ -52,6 +53,7 @@ class ScientificImageEditorProvider
   readonly #scheduler = new RequestScheduler(4);
   readonly #computeScheduler = new RequestScheduler(1);
   readonly #overlays = new Map<vscode.WebviewPanel, OverlaySession>();
+  readonly #inputFocus = new PanelInputFocusTracker<vscode.WebviewPanel>();
   #nextOverlayId = 1;
   #activePanel?: vscode.WebviewPanel;
 
@@ -96,6 +98,7 @@ class ScientificImageEditorProvider
       statisticsAbortController?.abort();
       lineProfileAbortController?.abort();
       this.#panels.delete(webviewPanel);
+      this.#inputFocus.delete(webviewPanel);
       if (this.#activePanel === webviewPanel) {
         this.#activePanel = [...this.#panels].find((panel) => panel.active);
       }
@@ -113,6 +116,10 @@ class ScientificImageEditorProvider
       const send = async (response: HostToWebviewMessage): Promise<void> => {
         if (!disposed) await this.post(webview, response);
       };
+      if (message.type === "inputFocus") {
+        this.#inputFocus.update(webviewPanel, message.focused);
+        return;
+      }
       if (message.type === "menuAction") {
         void this.handleMenuAction(message.action, webviewPanel, document.uri)
           .catch((error) => send(errorMessage(error)));
@@ -321,7 +328,11 @@ class ScientificImageEditorProvider
   }
 
   execute(command: ViewerCommand): void {
-    if (this.#activePanel && this.#panels.has(this.#activePanel)) {
+    if (
+      this.#activePanel &&
+      this.#panels.has(this.#activePanel) &&
+      !this.#inputFocus.hasFocus(this.#activePanel)
+    ) {
       void this.post(this.#activePanel.webview, { type: "command", command });
     }
   }
@@ -495,6 +506,8 @@ function isWebviewMessage(value: unknown): value is WebviewToHostMessage {
   switch (value.type) {
     case "ready":
       return true;
+    case "inputFocus":
+      return typeof value.focused === "boolean";
     case "menuAction":
       return isMenuAction(value.action);
     case "removeOverlay":

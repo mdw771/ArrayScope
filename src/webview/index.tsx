@@ -22,6 +22,7 @@ if (restored && typeof restored === "object") {
 }
 
 const disposeController = initializeController();
+const disposeInputFocusTracking = initializeInputFocusTracking();
 const rootElement = document.getElementById("root");
 if (!rootElement) throw new Error("ArrayScope webview root is missing.");
 const reactRoot = createRoot(rootElement);
@@ -41,6 +42,7 @@ function disposeWebview(): void {
     panY: state.panY,
     ranges: state.ranges,
   });
+  disposeInputFocusTracking();
   disposeController();
   reactRoot.unmount();
   window.removeEventListener("pagehide", disposeWebview);
@@ -50,3 +52,37 @@ function disposeWebview(): void {
 window.addEventListener("pagehide", disposeWebview);
 window.addEventListener("beforeunload", disposeWebview);
 reactRoot.render(<StrictMode><App /></StrictMode>);
+
+function initializeInputFocusTracking(): () => void {
+  let reportedFocused = false;
+  const report = (focused: boolean): void => {
+    if (focused === reportedFocused) return;
+    reportedFocused = focused;
+    vscodeApi.postMessage({ type: "inputFocus", focused });
+  };
+  const onFocusIn = (event: FocusEvent): void => {
+    if (isEditableTarget(event.target)) report(true);
+  };
+  const onFocusOut = (event: FocusEvent): void => {
+    if (isEditableTarget(event.target) && !isEditableTarget(event.relatedTarget)) report(false);
+  };
+  const onWindowFocus = (): void => report(isEditableTarget(document.activeElement));
+  const onWindowBlur = (): void => report(false);
+  document.addEventListener("focusin", onFocusIn);
+  document.addEventListener("focusout", onFocusOut);
+  window.addEventListener("focus", onWindowFocus);
+  window.addEventListener("blur", onWindowBlur);
+  return () => {
+    document.removeEventListener("focusin", onFocusIn);
+    document.removeEventListener("focusout", onFocusOut);
+    window.removeEventListener("focus", onWindowFocus);
+    window.removeEventListener("blur", onWindowBlur);
+    report(false);
+  };
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  return target instanceof Element && Boolean(
+    target.closest("input, select, textarea, [contenteditable]:not([contenteditable='false'])"),
+  );
+}
