@@ -57,7 +57,7 @@ function handleHostMessage(message: HostToWebviewMessage): void {
       state.setMetadata(message.metadata, message.settings);
       const dimensionality = message.metadata.additionalMetadata?.dimensionality;
       if (message.metadata.format !== "npy" || dimensionality === "image") {
-        requestSliceData(0);
+        requestSliceData(useViewerStore.getState().currentSlice);
       }
       break;
     }

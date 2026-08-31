@@ -55,6 +55,48 @@ beforeEach(() => {
   });
 });
 
+describe("metadata restoration", () => {
+  it.each([
+    { restoredSlice: 7, expectedSlice: 7 },
+    { restoredSlice: 15, expectedSlice: 9 },
+  ])(
+    "loads restored slice $restoredSlice as slice $expectedSlice",
+    ({ restoredSlice, expectedSlice }) => {
+      let messageListener: ((event: MessageEvent) => void) | undefined;
+      vi.stubGlobal("window", {
+        addEventListener: (type: string, listener: (event: MessageEvent) => void) => {
+          if (type === "message") messageListener = listener;
+        },
+        removeEventListener: () => undefined,
+      });
+      store.useViewerStore.setState({ metadata: undefined, currentSlice: restoredSlice });
+      const dispose = controller.initializeController();
+
+      try {
+        messageListener?.({
+          data: {
+            type: "metadata",
+            metadata: stackMetadata,
+            settings: {
+              localCacheMB: 256,
+              tileSize: 256,
+              automaticHistogramPixelLimit: 1_000_000,
+            },
+          },
+        } as MessageEvent);
+
+        expect(store.useViewerStore.getState().currentSlice).toBe(expectedSlice);
+        expect(posted.some(
+          (message) => message.type === "getOverview" && message.sliceIndex === expectedSlice,
+        )).toBe(true);
+      } finally {
+        dispose();
+        vi.unstubAllGlobals();
+      }
+    },
+  );
+});
+
 describe("no-selection analysis behavior", () => {
   it("requests a full-image histogram and full-image statistics", () => {
     controller.requestHistogram();
@@ -351,6 +393,14 @@ const metadata: ImageMetadata = {
   fileSizeBytes: 400,
   totalElementCount: 100,
   isComplex: false,
+};
+
+const stackMetadata: ImageMetadata = {
+  ...metadata,
+  shape: [10, 10, 10],
+  sliceCount: 10,
+  totalElementCount: 1_000,
+  additionalMetadata: { dimensionality: "image" },
 };
 
 const fullSliceHistogram: HistogramResult = {

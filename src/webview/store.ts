@@ -117,8 +117,13 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
   resetRangePending: false,
   generation: 1,
   tileRevision: 0,
-  setMetadata: (metadata, settings) =>
-    set({ metadata, settings, currentSlice: 0, error: undefined, histogramStale: true }),
+  setMetadata: (metadata, settings) => {
+    const currentSlice = Math.max(
+      0,
+      Math.min(metadata.sliceCount - 1, Math.round(get().currentSlice)),
+    );
+    set({ metadata, settings, currentSlice, error: undefined, histogramStale: true });
+  },
   setTool: (activeTool) => set({ activeTool, draftSelection: undefined, draftPolygon: undefined }),
   setSlice: (slice) => {
     const metadata = get().metadata;

@@ -3,23 +3,25 @@ import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { vscodeApi } from "./api";
 import { initializeController } from "./controller";
+import {
+  createPersistedViewerState,
+  persistedViewerStateChanged,
+  restorePersistedViewerState,
+} from "./persistence";
 import { useViewerStore } from "./store";
 import "./styles.css";
 
-const restored = vscodeApi.getState();
-if (restored && typeof restored === "object") {
-  const value = restored as Partial<ReturnType<typeof useViewerStore.getState>>;
-  useViewerStore.setState({
-    activeTool: value.activeTool ?? "pan",
-    colormap: value.colormap ?? "gray",
-    complexMode: value.complexMode ?? "magnitude",
-    selection: value.selection,
-    zoom: value.zoom ?? 1,
-    panX: value.panX ?? 0,
-    panY: value.panY ?? 0,
-    ranges: value.ranges ?? { phase: [-Math.PI, Math.PI] },
-  });
+const restored = restorePersistedViewerState(vscodeApi.getState());
+if (restored) useViewerStore.setState(restored);
+
+function persistViewerState(): void {
+  vscodeApi.setState(createPersistedViewerState(useViewerStore.getState()));
 }
+
+persistViewerState();
+const disposeStatePersistence = useViewerStore.subscribe((state, previousState) => {
+  if (persistedViewerStateChanged(state, previousState)) persistViewerState();
+});
 
 const disposeController = initializeController();
 const disposeInputFocusTracking = initializeInputFocusTracking();
@@ -31,17 +33,8 @@ let disposed = false;
 function disposeWebview(): void {
   if (disposed) return;
   disposed = true;
-  const state = useViewerStore.getState();
-  vscodeApi.setState({
-    activeTool: state.activeTool,
-    colormap: state.colormap,
-    complexMode: state.complexMode,
-    selection: state.selection,
-    zoom: state.zoom,
-    panX: state.panX,
-    panY: state.panY,
-    ranges: state.ranges,
-  });
+  persistViewerState();
+  disposeStatePersistence();
   disposeInputFocusTracking();
   disposeController();
   reactRoot.unmount();
