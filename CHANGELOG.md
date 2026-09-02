@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.3
+
+- Fixed viewer state, including the dynamic range, current stack slice, zoom and pan, selection, colormap, and complex display mode, being reset when switching between image tabs.
+
 ## 0.2.2
 
 - Removed the steppers in the dynamic range input fields.
