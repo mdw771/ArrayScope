@@ -4,7 +4,8 @@ import {
   type ImageTile,
   type NumericDType,
 } from "../shared/types";
-import { decodeValue } from "../host/numeric";
+import { colorRange } from "../shared/color";
+import { decodePixel, decodeValue } from "../host/numeric";
 
 function keyFor(tile: Pick<ImageTile, "sliceIndex" | "level" | "x" | "y" | "width" | "height">): string {
   return `${tile.sliceIndex}:${tile.level}:${tile.x}:${tile.y}:${tile.width}:${tile.height}`;
@@ -162,11 +163,28 @@ export function sampleTile(
 ): ReturnType<typeof decodeValue> {
   const localX = x - tile.x;
   const localY = y - tile.y;
-  const offset = (localY * tile.width + localX) * DTYPE_BYTES[tile.dtype];
-  return decodeValue(new DataView(tile.data), offset, tile.dtype, true);
+  const offset = (localY * tile.width + localX) * DTYPE_BYTES[tile.dtype] * (tile.channelCount ?? 1);
+  return decodePixel(new DataView(tile.data), offset, tile.dtype, tile.channelCount);
 }
 
 export function tileToFloatData(tile: ImageTile): Float32Array {
+  if (tile.channelCount) {
+    const output = new Float32Array(tile.width * tile.height * 4);
+    const view = new DataView(tile.data);
+    const bytes = DTYPE_BYTES[tile.dtype];
+    const alphaMaximum = colorRange(tile.dtype)[1];
+    for (let index = 0; index < tile.width * tile.height; index += 1) {
+      const offset = index * tile.channelCount * bytes;
+      const alpha = tile.channelCount === 4
+        ? decodeValue(view, offset + 3 * bytes, tile.dtype, true).scalar! / alphaMaximum : 1;
+      for (let channel = 0; channel < 3; channel += 1) {
+        const value = decodeValue(view, offset + channel * bytes, tile.dtype, true).scalar!;
+        output[index * 4 + channel] = tile.alphaMode === "associated" ? (alpha > 0 ? value / alpha : 0) : value;
+      }
+      output[index * 4 + 3] = Number.isFinite(alpha) ? Math.max(0, Math.min(1, alpha)) : 0;
+    }
+    return output;
+  }
   const components = tile.dtype === "complex64" || tile.dtype === "complex128" ? 2 : 1;
   const output = new Float32Array(tile.width * tile.height * components);
   const view = new DataView(tile.data);
@@ -186,6 +204,7 @@ export function tileDisplayRange(
   tile: ImageTile,
   mode: ComplexDisplayMode | "scalar",
 ): [number, number] | undefined {
+  if (tile.channelCount) return colorRange(tile.dtype);
   const view = new DataView(tile.data);
   const bytes = DTYPE_BYTES[tile.dtype];
   let minimum = Number.POSITIVE_INFINITY;

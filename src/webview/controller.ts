@@ -1,3 +1,4 @@
+import { colorRange } from "../shared/color";
 import type {
   ComplexDisplayMode,
   HostToWebviewMessage,
@@ -56,7 +57,7 @@ function handleHostMessage(message: HostToWebviewMessage): void {
       tileCache.configure(message.settings.localCacheMB);
       state.setMetadata(message.metadata, message.settings);
       const dimensionality = message.metadata.additionalMetadata?.dimensionality;
-      if (message.metadata.format !== "npy" || dimensionality === "image") {
+      if (dimensionality === undefined || dimensionality === "image") {
         requestSliceData(useViewerStore.getState().currentSlice);
       }
       break;
@@ -303,6 +304,12 @@ export function autoContrast(): void {
 
 export function resetDynamicRange(): void {
   const state = useViewerStore.getState();
+  if (state.metadata?.channelCount) {
+    state.setAutoContrastPending(false);
+    state.setResetRangePending(false);
+    state.setRange("scalar", colorRange(state.metadata.dtype));
+    return;
+  }
   const mode = state.metadata?.isComplex ? state.complexMode : "scalar";
   if (
     state.histogram &&
@@ -337,6 +344,7 @@ export function samplePixel(x: number, y: number): void {
         x: pixelX,
         y: pixelY,
         value: decoded.scalar,
+        channels: decoded.channels,
       };
     } else {
       const real = decoded.real ?? Number.NaN;

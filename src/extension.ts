@@ -6,6 +6,7 @@ import type {
   ViewerCommand,
   WebviewToHostMessage,
 } from "./shared/types";
+import type { ChooseChannelInterpretation } from "./host/channelInterpretation";
 import { NpyImageDataSource } from "./host/npyDataSource";
 import { PanelInputFocusTracker } from "./host/panelInputFocus";
 import { RequestScheduler, ScheduledTaskCancelledError } from "./host/scheduler";
@@ -389,7 +390,7 @@ class ScientificImageEditorProvider
     const dataSource = await createImageDataSource(uri);
     try {
       const metadata = await dataSource.getMetadata();
-      if (metadata.format === "npy" && metadata.additionalMetadata?.dimensionality !== "image") {
+      if (typeof metadata.additionalMetadata?.dimensionality === "string" && metadata.additionalMetadata.dimensionality !== "image") {
         throw new Error("The overlay must be a 2D image or a 3D image stack.");
       }
       if (!this.#panels.has(webviewPanel)) {
@@ -654,10 +655,19 @@ async function createImageDataSource(uri: vscode.Uri): Promise<ScientificImageDa
     .getConfiguration("scientificImageViewer")
     .get<number>("remoteCacheMB", 512);
   const cacheBytes = cacheMB * 1024 * 1024;
+  const chooseChannels: ChooseChannelInterpretation = async (shape) => {
+    const channels = shape.at(-1)!;
+    const choice = await vscode.window.showInformationMessage(
+      `${uri.path.split("/").at(-1) ?? uri.path} has shape [${shape.join(", ")}]. Interpret the last dimension as ${channels === 3 ? "RGB" : "RGBA"} channels?`,
+      { modal: true, detail: "Choose channels for a color image. Keep dimensions to retain the scalar array interpretation. Reopen the file to choose again." },
+      "Interpret as channels", "Keep dimensions",
+    );
+    return choice === "Interpret as channels";
+  };
   const extension = uri.path.toLowerCase();
-  if (extension.endsWith(".npy")) return NpyImageDataSource.create(uri, cacheBytes);
+  if (extension.endsWith(".npy")) return NpyImageDataSource.create(uri, cacheBytes, chooseChannels);
   if (extension.endsWith(".tif") || extension.endsWith(".tiff")) {
-    return TiffImageDataSource.create(uri, cacheBytes);
+    return TiffImageDataSource.create(uri, cacheBytes, chooseChannels);
   }
   throw new Error(`Unsupported scientific image extension for ${uri.path}.`);
 }

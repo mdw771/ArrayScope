@@ -33,6 +33,8 @@ export interface ImageMetadata {
   fileSizeBytes: number;
   totalElementCount: number;
   isComplex: boolean;
+  channelCount?: 3 | 4;
+  alphaMode?: "straight" | "associated";
   additionalMetadata?: Record<string, unknown>;
 }
 
@@ -87,6 +89,8 @@ export interface ImageTileRequest {
 export interface ImageTile extends Omit<ImageTileRequest, "priority"> {
   dtype: NumericDType;
   data: ArrayBuffer;
+  channelCount?: 3 | 4;
+  alphaMode?: "straight" | "associated";
 }
 
 export interface HistogramRequest {
@@ -156,6 +160,7 @@ export interface SamplePixelResult {
   x: number;
   y: number;
   value?: number;
+  channels?: number[];
   real?: number;
   imaginary?: number;
   magnitude?: number;

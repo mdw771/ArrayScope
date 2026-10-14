@@ -242,7 +242,7 @@ export function ImageViewport({ mode }: { mode: ComplexDisplayMode | "scalar" })
         className={`viewport tool-${state.activeTool}`}
         tabIndex={0}
         role="application"
-        aria-label={`${mode} scientific image viewport`}
+        aria-label={`${metadata?.channelCount ? metadata.channelCount === 4 ? "RGBA" : "RGB" : mode} scientific image viewport`}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
@@ -380,7 +380,8 @@ function SampleAnnotation({ sample }: { sample: NonNullable<ReturnType<typeof us
         }}
       >×</button>
       <div>x: {sample.x}</div><div>y: {sample.y}</div><div>slice: {sample.sliceIndex + 1}</div>
-      {sample.value !== undefined ? <div>value: {formatValue(sample.value)}</div> : <>
+      {sample.channels && <div>{sample.channels.length === 4 ? "RGBA" : "RGB"}: {sample.channels.map(formatValue).join(", ")}</div>}
+      {sample.value !== undefined ? <div>{sample.channels ? "luminance" : "value"}: {formatValue(sample.value)}</div> : <>
         <div>real: {formatValue(sample.real)}</div><div>imag: {formatValue(sample.imaginary)}</div>
         <div>magnitude: {formatValue(sample.magnitude)}</div><div>phase: {formatValue(sample.phase)} rad</div>
       </>}

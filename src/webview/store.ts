@@ -1,3 +1,4 @@
+import { colorRange } from "../shared/color";
 import { create } from "zustand";
 import type {
   ComplexDisplayMode,
@@ -122,7 +123,10 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
       0,
       Math.min(metadata.sliceCount - 1, Math.round(get().currentSlice)),
     );
-    set({ metadata, settings, currentSlice, error: undefined, histogramStale: true });
+    set((state) => ({
+      metadata, settings, currentSlice, error: undefined, histogramStale: true,
+      ranges: metadata.channelCount ? { ...state.ranges, scalar: state.ranges.scalar ?? colorRange(metadata.dtype) } : state.ranges,
+    }));
   },
   setTool: (activeTool) => set({ activeTool, draftSelection: undefined, draftPolygon: undefined }),
   setSlice: (slice) => {

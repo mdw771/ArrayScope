@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0
+
+- Added RGB/RGBA TIFF display, including transparency and color stacks.
+- Added a channel-interpretation prompt for NPY arrays ending in size 3 or 4 and RGB/RGBA TIFFs.
+- Added RGB/RGBA sampling and luminance-based statistics, histograms, and line profiles.
+
 ## 0.2.3
 
 - Fixed viewer state, including the dynamic range, current stack slice, zoom and pan, selection, colormap, and complex display mode, being reset when switching between image tabs.

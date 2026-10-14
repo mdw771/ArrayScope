@@ -38,6 +38,15 @@
       16, 8, 0,
       0, 8, 16,
     ]);
+    // Open with ?color=rgb or ?color=rgba to exercise the real color shader and sampler.
+    const colorMode = new URLSearchParams(location.search).get("color");
+    const channels = colorMode === "rgba" ? 4 : colorMode === "rgb" ? 3 : 1;
+    const colorValues = new Uint8Array([
+      255,0,0,255, 0,255,0,255, 0,0,255,255, 255,255,255,255,
+      255,0,0,128, 0,255,0,128, 0,0,255,128, 255,255,255,128,
+      255,0,0,0, 0,255,0,0, 0,0,255,0, 255,255,255,0,
+      0,0,0,255, 128,128,128,255, 255,128,0,255, 128,0,255,255,
+    ]);
     let savedState;
     window.acquireVsCodeApi = () => ({
       getState: () => savedState,
@@ -51,9 +60,10 @@
             settings: { localCacheMB: 32, tileSize: 256, automaticHistogramPixelLimit: 1000000 },
             metadata: {
               uri: "file:///fixture.npy", fileName: "fixture.npy", format: "npy",
-              shape: [4, 4], width: 4, height: 4, sliceCount: 1, dtype: "float32",
+              shape: channels > 1 ? [4, 4, channels] : [4, 4], width: 4, height: 4, sliceCount: 1, dtype: channels > 1 ? "uint8" : "float32",
+              channelCount: channels > 1 ? channels : undefined,
               byteOrder: "little", fortranOrder: false, fileSizeBytes: 128,
-              totalElementCount: 16, isComplex: false,
+              totalElementCount: 16 * channels, isComplex: false,
               additionalMetadata: { dimensionality: "image", npyVersion: "1.0" },
             },
           });
@@ -132,6 +142,14 @@
     function respond(message) { setTimeout(() => window.postMessage(message, "*"), 0); }
     function tileFor(requestId, generation, sliceIndex, x, y, width, height, level = 0) {
       const factor = 2 ** level;
+      if (channels > 1) {
+        const data = new Uint8Array(width * height * channels);
+        for (let oy = 0; oy < height; oy++) for (let ox = 0; ox < width; ox++) {
+          const pixel = ((y + oy) * factor * 4 + (x + ox) * factor) * 4;
+          data.set(colorValues.subarray(pixel, pixel + channels), (oy * width + ox) * channels);
+        }
+        return { requestId, generation, sliceIndex, level, x, y, width, height, dtype: "uint8", channelCount: channels, data: data.buffer };
+      }
       const data = new Float32Array(width * height);
       for (let oy = 0; oy < height; oy++) for (let ox = 0; ox < width; ox++) {
         data[oy * width + ox] = values[(y + oy) * factor * 4 + (x + ox) * factor] ?? 0;

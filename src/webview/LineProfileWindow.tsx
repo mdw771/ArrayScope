@@ -38,6 +38,7 @@ function LineProfileChart({
 }: {
   profile: NonNullable<ReturnType<typeof useViewerStore.getState>["lineProfile"]>;
 }) {
+  const color = useViewerStore((state) => Boolean(state.metadata?.channelCount));
   const complex = profile.magnitudes !== undefined && profile.phases !== undefined;
   const right = complex ? 72 : 24;
   const plotWidth = SVG_WIDTH - LEFT - right;
@@ -56,14 +57,14 @@ function LineProfileChart({
   return (
     <div className="line-profile-chart-shell">
       <div className="line-profile-legend" aria-hidden="true">
-        <span className="legend-left">{complex ? "Magnitude" : "Pixel value"}</span>
+        <span className="legend-left">{complex ? "Magnitude" : color ? "Luminance" : "Pixel value"}</span>
         {complex && <span className="legend-right">Phase</span>}
       </div>
       <svg
         className="line-profile-chart"
         viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`}
         role="img"
-        aria-label={complex ? "Magnitude and phase along the selected line" : "Pixel values along the selected line"}
+        aria-label={complex ? "Magnitude and phase along the selected line" : color ? "Luminance along the selected line" : "Pixel values along the selected line"}
       >
         {leftTicks.map((value) => {
           const y = yAt(value, leftRange);
@@ -97,7 +98,7 @@ function LineProfileChart({
           })}
           <text className="profile-axis-label profile-right-label" transform={`translate(${SVG_WIDTH - 15} ${TOP + plotHeight / 2}) rotate(90)`}>Phase (rad)</text>
         </>}
-        <text className="profile-axis-label" transform={`translate(16 ${TOP + plotHeight / 2}) rotate(-90)`}>{complex ? "Magnitude" : "Pixel value"}</text>
+        <text className="profile-axis-label" transform={`translate(16 ${TOP + plotHeight / 2}) rotate(-90)`}>{complex ? "Magnitude" : color ? "Luminance" : "Pixel value"}</text>
         <text className="profile-axis-label" x={LEFT + plotWidth / 2} y={SVG_HEIGHT - 8} textAnchor="middle">Distance along line (pixels)</text>
       </svg>
       <div className="line-profile-summary">{pointCount.toLocaleString()} points · 1 px sampling · linear interpolation</div>

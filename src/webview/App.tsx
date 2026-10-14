@@ -25,7 +25,7 @@ export function App() {
 function Viewer({ metadata }: { metadata: NonNullable<ReturnType<typeof useViewerStore.getState>["metadata"]> }) {
   const dimensionality = metadata.additionalMetadata?.dimensionality;
   const scalar = metadata.format === "npy" && dimensionality === "scalar";
-  const unsupported = metadata.format === "npy" && typeof dimensionality === "string" && dimensionality.startsWith("unsupported");
+  const unsupported = typeof dimensionality === "string" && dimensionality.startsWith("unsupported");
   return (
     <div className="viewer-shell">
       <Toolbar />
@@ -34,7 +34,7 @@ function Viewer({ metadata }: { metadata: NonNullable<ReturnType<typeof useViewe
           {scalar ? (
             <div className="unsupported-message"><h2>Scalar NPY value</h2><code>{JSON.stringify(metadata.additionalMetadata?.scalarValue)}</code></div>
           ) : unsupported ? (
-            <div className="unsupported-message"><h2>Unsupported dimensionality</h2><p>ArrayScope displays 2D images and 3D stacks. This array has shape [{metadata.shape.join(", ")}].</p></div>
+            <div className="unsupported-message"><h2>Unsupported dimensionality</h2><p>ArrayScope displays 2D images and 3D stacks, including RGB/RGBA images when interpreted as channels. This array has shape [{metadata.shape.join(", ")}].</p></div>
           ) : (
             <>
               <div className={`canvas-grid ${metadata.isComplex ? "complex" : "scalar"}`}>

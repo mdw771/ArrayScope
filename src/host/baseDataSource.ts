@@ -15,7 +15,7 @@ import {
   type StatisticsResult,
 } from "../shared/types";
 import { ByteLruCache } from "./lru";
-import { decodeBuffer, decodeValue } from "./numeric";
+import { decodeBuffer, decodePixel, decodeValue } from "./numeric";
 
 interface RunningMoments {
   count: number;
@@ -143,6 +143,9 @@ export abstract class BaseImageDataSource implements ScientificImageDataSource {
     );
     throwIfCancelled(signal);
     this.assertOpen();
+    if (data.byteLength !== width * height * DTYPE_BYTES[this.metadata.dtype] * (this.metadata.channelCount ?? 1)) {
+      throw new Error("Decoder returned an unexpected amount of image data.");
+    }
     const tile: ImageTile = {
       requestId: request.requestId,
       generation: request.generation,
@@ -153,6 +156,8 @@ export abstract class BaseImageDataSource implements ScientificImageDataSource {
       width,
       height,
       dtype: this.metadata.dtype,
+      channelCount: this.metadata.channelCount,
+      alphaMode: this.metadata.alphaMode,
       data,
     };
     this.#tileCache.set(cacheKey, tile);
@@ -165,12 +170,15 @@ export abstract class BaseImageDataSource implements ScientificImageDataSource {
     this.validateSlice(request.sliceIndex);
     const x = Math.max(0, Math.min(this.metadata.width - 1, Math.round(request.x)));
     const y = Math.max(0, Math.min(this.metadata.height - 1, Math.round(request.y)));
+    await this.assertSourceUnchanged();
+    throwIfCancelled(signal);
+    this.assertOpen();
     const data = await this.readRegion(request.sliceIndex, x, y, 1, 1, 1, signal);
     throwIfCancelled(signal);
     this.assertOpen();
-    const decoded = decodeValue(new DataView(data), 0, this.metadata.dtype, true);
+    const decoded = decodePixel(new DataView(data), 0, this.metadata.dtype, this.metadata.channelCount);
     if (decoded.scalar !== undefined) {
-      return { ...request, x, y, value: decoded.scalar };
+      return { ...request, x, y, value: decoded.scalar, channels: decoded.channels };
     }
     const real = decoded.real ?? Number.NaN;
     const imaginary = decoded.imaginary ?? Number.NaN;
@@ -231,20 +239,20 @@ export abstract class BaseImageDataSource implements ScientificImageDataSource {
       const sorted = [...xs].sort((left, right) => left - right);
       for (let first = 0; first < sorted.length;) {
         let last = first;
-        while (last + 1 < sorted.length && sorted[last + 1] === sorted[last]! + 1) last += 1;
+        while (last + 1 < sorted.length && last - first + 1 < 4096 && sorted[last + 1] === sorted[last]! + 1) last += 1;
         const start = sorted[first]!;
         const pixelCount = sorted[last]! - start + 1;
         const data = await this.readRegion(request.sliceIndex, start, y, pixelCount, 1, 1, signal);
         throwIfCancelled(signal);
         this.assertOpen();
-        if (data.byteLength !== pixelCount * DTYPE_BYTES[this.metadata.dtype]) {
+        if (data.byteLength !== pixelCount * DTYPE_BYTES[this.metadata.dtype] * (this.metadata.channelCount ?? 1)) {
           throw new Error("Decoder returned an unexpected amount of image data.");
         }
         const view = new DataView(data);
         for (let offset = 0; offset < pixelCount; offset += 1) {
           decodedPixels.set(
             `${start + offset},${y}`,
-            decodeValue(view, offset * DTYPE_BYTES[this.metadata.dtype], this.metadata.dtype, true),
+            decodePixel(view, offset * DTYPE_BYTES[this.metadata.dtype] * (this.metadata.channelCount ?? 1), this.metadata.dtype, this.metadata.channelCount),
           );
         }
         first = last + 1;
@@ -281,7 +289,7 @@ export abstract class BaseImageDataSource implements ScientificImageDataSource {
 
     await this.forEachSelectionRun(request.sliceIndex, request.selection, async (data, length) => {
       counts.geometric += length;
-      for (const value of decodeBuffer(data, this.metadata.dtype, request.complexMode)) {
+      for (const value of decodeBuffer(data, this.metadata.dtype, request.complexMode, this.metadata.channelCount)) {
         if (Number.isNaN(value)) counts.nan += 1;
         else if (value === Number.POSITIVE_INFINITY) counts.positiveInfinity += 1;
         else if (value === Number.NEGATIVE_INFINITY) counts.negativeInfinity += 1;
@@ -332,7 +340,7 @@ export abstract class BaseImageDataSource implements ScientificImageDataSource {
     let maximum = Number.NEGATIVE_INFINITY;
 
     await this.forEachSelectionRun(request.sliceIndex, request.selection, async (data) => {
-      for (const value of decodeBuffer(data, this.metadata.dtype, request.complexMode)) {
+      for (const value of decodeBuffer(data, this.metadata.dtype, request.complexMode, this.metadata.channelCount)) {
         if (Number.isNaN(value)) counts.nan += 1;
         else if (value === Number.POSITIVE_INFINITY) counts.positiveInfinity += 1;
         else if (value === Number.NEGATIVE_INFINITY) counts.negativeInfinity += 1;
@@ -417,14 +425,17 @@ export abstract class BaseImageDataSource implements ScientificImageDataSource {
       throwIfCancelled(signal);
       for (const [startX, endX] of rasterizer.runsForRow(y)) {
         throwIfCancelled(signal);
-        const pixelCount = endX - startX + 1;
-        const data = await this.readRegion(sliceIndex, startX, y, pixelCount, 1, 1, signal);
-        throwIfCancelled(signal);
-        this.assertOpen();
-        if (data.byteLength !== pixelCount * DTYPE_BYTES[this.metadata.dtype]) {
-          throw new Error("Decoder returned an unexpected amount of image data.");
+        // Bound decoded rows even when a very wide image is analyzed without a selection.
+        for (let x = startX; x <= endX; x += 4096) {
+          const pixelCount = Math.min(4096, endX - x + 1);
+          const data = await this.readRegion(sliceIndex, x, y, pixelCount, 1, 1, signal);
+          throwIfCancelled(signal);
+          this.assertOpen();
+          if (data.byteLength !== pixelCount * DTYPE_BYTES[this.metadata.dtype] * (this.metadata.channelCount ?? 1)) {
+            throw new Error("Decoder returned an unexpected amount of image data.");
+          }
+          await callback(data, pixelCount);
         }
-        await callback(data, pixelCount);
       }
     }
   }

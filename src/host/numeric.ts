@@ -1,8 +1,10 @@
 import { DTYPE_BYTES, type ComplexDisplayMode, type NumericDType } from "../shared/types";
+import { luminance } from "../shared/color";
 import { transformComplex } from "../shared/transform";
 
 export interface DecodedValue {
   scalar?: number;
+  channels?: number[];
   real?: number;
   imaginary?: number;
 }
@@ -45,6 +47,17 @@ export function decodeValue(
   }
 }
 
+/** Decode one pixel; color tiles contain interleaved, unmodified channel samples. */
+export function decodePixel(
+  view: DataView, offset: number, dtype: NumericDType, channelCount = 1,
+): DecodedValue {
+  if (channelCount === 1) return decodeValue(view, offset, dtype, true);
+  const channels = Array.from({ length: channelCount }, (_, channel) =>
+    decodeValue(view, offset + channel * DTYPE_BYTES[dtype], dtype, true).scalar ?? Number.NaN
+  );
+  return { scalar: luminance(channels), channels };
+}
+
 export function transformedValue(
   decoded: DecodedValue,
   mode?: ComplexDisplayMode,
@@ -60,11 +73,12 @@ export function* decodeBuffer(
   data: ArrayBuffer,
   dtype: NumericDType,
   mode?: ComplexDisplayMode,
+  channelCount = 1,
 ): Generator<number> {
-  const bytes = DTYPE_BYTES[dtype];
+  const bytes = DTYPE_BYTES[dtype] * channelCount;
   const view = new DataView(data);
   for (let offset = 0; offset + bytes <= view.byteLength; offset += bytes) {
-    yield transformedValue(decodeValue(view, offset, dtype, true), mode);
+    yield transformedValue(decodePixel(view, offset, dtype, channelCount), mode);
   }
 }
 

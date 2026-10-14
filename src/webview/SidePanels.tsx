@@ -1,3 +1,4 @@
+import { colorRange } from "../shared/color";
 import { useEffect, useMemo, useState } from "react";
 import type { ComplexDisplayMode } from "../shared/types";
 import {
@@ -53,9 +54,11 @@ function InfoPanel() {
         <Property label="Data type" value={metadata.dtype} />
         <Property label="Byte order" value={metadata.byteOrder} />
         {metadata.format === "npy" && <Property label="Memory order" value={metadata.fortranOrder ? "Fortran" : "C"} />}
+        {metadata.channelCount && <Property label="Channels" value={metadata.channelCount === 4 ? "RGBA" : "RGB"} />}
+        {metadata.channelCount && <Property label="Analysis" value="Luminance (alpha excluded)" />}
         <Property label="Complex" value={metadata.isComplex ? "Yes" : "No"} />
         {metadata.isComplex && <Property label="Analysis mode" value={modeLabel(complexMode)} />}
-        {metadata.format === "tiff" && <Property label="TIFF pages" value={metadata.sliceCount.toLocaleString()} />}
+        {metadata.format === "tiff" && <Property label="TIFF pages" value={String(metadata.additionalMetadata?.pageCount ?? metadata.sliceCount)} />}
       </dl>
       {metadata.additionalMetadata && (
         <details className="nested-details">
@@ -124,9 +127,13 @@ function HistogramPanel() {
     ),
     [automaticHistogramPixelLimit, metadata, selection],
   );
-  const bounds: [number, number] = histogram
+  const histogramBounds: [number, number] = histogram
     ? stableRange(histogram.minimum, histogram.maximum)
     : range;
+  const colorBounds = metadata?.channelCount ? colorRange(metadata.dtype) : undefined;
+  const bounds: [number, number] = colorBounds
+    ? [Math.min(colorBounds[0], histogramBounds[0], range[0]), Math.max(colorBounds[1], histogramBounds[1], range[1])]
+    : histogramBounds;
   const updateRange = (index: 0 | 1, value: number): void => {
     if (!Number.isFinite(value)) return;
     const state = useViewerStore.getState();
@@ -148,11 +155,18 @@ function HistogramPanel() {
           </select>
         </label>
       )}
-      <label className="control-row"><span>Colormap</span>
-        <select value={colormap} onChange={(event) => useViewerStore.getState().setColormap(event.target.value)}>
-          {COLORMAPS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-        </select>
-      </label>
+      {metadata?.channelCount ? (
+        <p className="empty-state">
+          Color is displayed as RGB. Analysis uses luminance (0.2126 R + 0.7152 G + 0.0722 B),
+          excluding alpha. Dynamic range applies equally to R, G, and B.
+        </p>
+      ) : (
+        <label className="control-row"><span>Colormap</span>
+          <select value={colormap} onChange={(event) => useViewerStore.getState().setColormap(event.target.value)}>
+            {COLORMAPS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select>
+        </label>
+      )}
       <div className="histogram-header">
         <span>{selection ? "Selection" : "Entire current slice"}</span>
         {stale && <span className="stale-badge">Stale</span>}

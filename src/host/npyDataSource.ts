@@ -2,9 +2,10 @@ import { endianness } from "node:os";
 import path from "node:path";
 import type * as vscode from "vscode";
 import { isComplexDType, type ImageMetadata } from "../shared/types";
+import { hasChannelDimension, type ChooseChannelInterpretation } from "./channelInterpretation";
 import { BaseImageDataSource } from "./baseDataSource";
 import { decodeValue, swapElementBytes } from "./numeric";
-import { cOrderElementIndex, fortranOrderElementIndex } from "./npyIndex";
+import { cOrderElementIndex, fortranOrderElementIndex, channelElementIndex } from "./npyIndex";
 import { parseNpyHeader, type ParsedNpyHeader } from "./npyParser";
 import { openRandomAccessReader, type RandomAccessReader } from "./randomAccess";
 
@@ -20,10 +21,16 @@ export class NpyImageDataSource extends BaseImageDataSource {
     super(metadata, remoteCacheBytes);
   }
 
-  static async create(uri: vscode.Uri, remoteCacheBytes: number): Promise<NpyImageDataSource> {
+  static async create(uri: vscode.Uri, remoteCacheBytes: number, chooseChannels?: ChooseChannelInterpretation): Promise<NpyImageDataSource> {
     const reader = await openRandomAccessReader(uri);
     try {
       const header = await parseNpyHeader(reader);
+      const useChannels = hasChannelDimension(header.shape) && !!(await chooseChannels?.(header.shape));
+      if (useChannels && isComplexDType(header.dtype)) {
+        throw new Error("RGB/RGBA interpretation requires a real-valued NPY dtype.");
+      }
+      const channelCount = useChannels ? header.shape.at(-1)! as 3 | 4 : undefined;
+      const imageShape = useChannels ? header.shape.slice(0, -1) : header.shape;
       const dimensionality =
         header.shape.some((dimension) => dimension === 0)
           ? "unsupported-empty"
@@ -31,12 +38,14 @@ export class NpyImageDataSource extends BaseImageDataSource {
           ? "scalar"
           : header.shape.length === 1
             ? "unsupported-1d"
-            : header.shape.length <= 3
+            : useChannels || header.shape.length <= 3
               ? "image"
               : "unsupported-high-dimensional";
-      const width = header.shape.length >= 1 ? header.shape.at(-1)! : 1;
-      const height = header.shape.length >= 2 ? header.shape.at(-2)! : 1;
-      const sliceCount = header.shape.length === 3 ? header.shape[0]! : 1;
+      const width = imageShape.at(-1) ?? 1;
+      const height = imageShape.at(-2) ?? 1;
+      const sliceCount = useChannels
+        ? imageShape.slice(0, -2).reduce((count, dimension) => count * dimension, 1)
+        : header.shape.length === 3 ? header.shape[0]! : 1;
       const metadata: ImageMetadata = {
         uri: uri.toString(),
         fileName: path.basename(uri.path),
@@ -51,6 +60,7 @@ export class NpyImageDataSource extends BaseImageDataSource {
         fileSizeBytes: reader.size,
         totalElementCount: header.totalElementCount,
         isComplex: isComplexDType(header.dtype),
+        channelCount,
         additionalMetadata: {
           npyVersion: `${header.version[0]}.${header.version[1]}`,
           descriptor: header.descriptor,
@@ -88,9 +98,11 @@ export class NpyImageDataSource extends BaseImageDataSource {
   ): Promise<ArrayBuffer> {
     signal?.throwIfAborted();
     const bytesPerElement = this.header.bytesPerElement;
-    const output = new Uint8Array(outputWidth * outputHeight * bytesPerElement);
+    const output = new Uint8Array(outputWidth * outputHeight * bytesPerElement * (this.metadata.channelCount ?? 1));
     if (output.byteLength === 0) return output.buffer;
-    if (this.header.fortranOrder) {
+    if (this.metadata.channelCount) {
+      await this.readColorRegion(output, sliceIndex, sourceX, sourceY, outputWidth, outputHeight, step, signal);
+    } else if (this.header.fortranOrder) {
       await this.readFortranRegion(
         output,
         sliceIndex,
@@ -216,6 +228,51 @@ export class NpyImageDataSource extends BaseImageDataSource {
           const element = firstElement + outputY * step * yStride;
           const value = await this.reader.read(this.checkedOffset(element), bytes, signal);
           output.set(value, (outputY * outputWidth + outputX) * bytes);
+        }
+      }
+    }
+  }
+
+  private async readColorRegion(
+    output: Uint8Array, sliceIndex: number, sourceX: number, sourceY: number,
+    outputWidth: number, outputHeight: number, step: number, signal?: AbortSignal,
+  ): Promise<void> {
+    const channels = this.metadata.channelCount!;
+    const bytes = this.header.bytesPerElement;
+    const pixelBytes = bytes * channels;
+    if (!this.header.fortranOrder) {
+      for (let y = 0; y < outputHeight; y += 1) {
+        signal?.throwIfAborted();
+        const first = channelElementIndex(this.header.shape, sliceIndex, sourceY + y * step, sourceX, 0, false);
+        const spanBytes = ((outputWidth - 1) * step + 1) * pixelBytes;
+        if (spanBytes <= MAX_CONTIGUOUS_READ_BYTES) {
+          const row = await this.reader.read(this.checkedOffset(first), spanBytes, signal);
+          for (let x = 0; x < outputWidth; x += 1) {
+            output.set(row.subarray(x * step * pixelBytes, x * step * pixelBytes + pixelBytes), (y * outputWidth + x) * pixelBytes);
+          }
+        } else {
+          for (let x = 0; x < outputWidth; x += 1) {
+            signal?.throwIfAborted();
+            output.set(await this.reader.read(this.checkedOffset(first + x * step * channels), pixelBytes, signal), (y * outputWidth + x) * pixelBytes);
+          }
+        }
+      }
+      return;
+    }
+    const yStride = this.metadata.sliceCount;
+    for (let channel = 0; channel < channels; channel += 1) {
+      for (let x = 0; x < outputWidth; x += 1) {
+        signal?.throwIfAborted();
+        const first = channelElementIndex(this.header.shape, sliceIndex, sourceY, sourceX + x * step, channel, true);
+        const spanBytes = ((outputHeight - 1) * step * yStride + 1) * bytes;
+        const column = spanBytes <= MAX_CONTIGUOUS_READ_BYTES
+          ? await this.reader.read(this.checkedOffset(first), spanBytes, signal) : undefined;
+        for (let y = 0; y < outputHeight; y += 1) {
+          signal?.throwIfAborted();
+          const sourceOffset = y * step * yStride * bytes;
+          const value = column ? column.subarray(sourceOffset, sourceOffset + bytes)
+            : await this.reader.read(this.checkedOffset(first + y * step * yStride), bytes, signal);
+          output.set(value, ((y * outputWidth + x) * channels + channel) * bytes);
         }
       }
     }

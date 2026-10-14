@@ -6,7 +6,8 @@ import {
   type GeoTIFF,
   type TypedArray,
 } from "geotiff";
-import type { ImageMetadata, NumericDType } from "../shared/types";
+import { DTYPE_BYTES, type ImageMetadata, type NumericDType } from "../shared/types";
+import type { ChooseChannelInterpretation } from "./channelInterpretation";
 import { BaseImageDataSource } from "./baseDataSource";
 import { tiffDtype } from "./tiffMetadata";
 
@@ -15,6 +16,7 @@ interface TiffPageDescription {
   height: number;
   dtype: NumericDType;
   samplesPerPixel: number;
+  alphaMode: "straight" | "associated";
 }
 
 type GeoTIFFImage = Awaited<ReturnType<GeoTIFF["getImage"]>>;
@@ -30,13 +32,14 @@ export class TiffImageDataSource extends BaseImageDataSource {
     readonly initialStat: vscode.FileStat,
     firstImage: GeoTIFFImage,
     remoteCacheBytes: number,
+    readonly nativePage: TiffPageDescription,
   ) {
     super(metadata, remoteCacheBytes);
     this.tiff = tiff;
     this.#images.set(0, firstImage);
   }
 
-  static async create(uri: vscode.Uri, remoteCacheBytes: number): Promise<TiffImageDataSource> {
+  static async create(uri: vscode.Uri, remoteCacheBytes: number, chooseChannels?: ChooseChannelInterpretation): Promise<TiffImageDataSource> {
     const stat = await vscode.workspace.fs.stat(uri);
     let tiff: GeoTIFF;
     if (uri.scheme === "file") {
@@ -57,21 +60,29 @@ export class TiffImageDataSource extends BaseImageDataSource {
       if (pageCount < 1) throw new Error("Corrupt TIFF file: no image directories were found.");
       const firstImage = await tiff.getImage(0);
       const first = describePage(firstImage);
+      const shape = pageCount > 1 ? [pageCount, first.height, first.width] : [first.height, first.width];
+      if (first.samplesPerPixel > 1) shape.push(first.samplesPerPixel);
+      const useChannels = first.samplesPerPixel > 1 && (chooseChannels ? await chooseChannels(shape) : true);
+      const channelCount = useChannels ? first.samplesPerPixel as 3 | 4 : undefined;
+      const scalarColor = first.samplesPerPixel > 1 && !useChannels;
       const metadata: ImageMetadata = {
         uri: uri.toString(),
         fileName: path.basename(uri.path),
         format: "tiff",
-        shape: pageCount > 1 ? [pageCount, first.height, first.width] : [first.height, first.width],
-        width: first.width,
-        height: first.height,
-        sliceCount: pageCount,
+        shape,
+        width: scalarColor ? first.samplesPerPixel : first.width,
+        height: scalarColor ? first.width : first.height,
+        sliceCount: scalarColor && pageCount === 1 ? first.height : pageCount,
         dtype: first.dtype,
         byteOrder: tiff.littleEndian ? "little" : "big",
         fileSizeBytes: stat.size,
-        totalElementCount: pageCount * first.width * first.height,
+        totalElementCount: pageCount * first.width * first.height * first.samplesPerPixel,
         isComplex: false,
+        channelCount,
+        alphaMode: channelCount === 4 ? first.alphaMode : undefined,
         additionalMetadata: {
           pageCount,
+          dimensionality: scalarColor && pageCount > 1 ? "unsupported-high-dimensional" : "image",
           bigTiff: tiff.bigTiff,
           tiled: firstImage.isTiled,
           tileWidth: firstImage.getTileWidth(),
@@ -91,6 +102,7 @@ export class TiffImageDataSource extends BaseImageDataSource {
         stat,
         firstImage,
         remoteCacheBytes,
+        first,
       );
     } catch (error) {
       await Promise.resolve(tiff.close());
@@ -108,6 +120,25 @@ export class TiffImageDataSource extends BaseImageDataSource {
     signal?: AbortSignal,
   ): Promise<ArrayBuffer> {
     signal?.throwIfAborted();
+    if (this.nativePage.samplesPerPixel > 1 && !this.metadata.channelCount) {
+      // A single [H,W,C] page declined as channels retains the scalar [slice,y,x] interpretation.
+      const image = await this.getCompatibleImage(0, signal);
+      const raster = await image.readRasters({
+        window: [sourceY, sliceIndex, Math.min(this.nativePage.width, sourceY + (outputHeight - 1) * step + 1), sliceIndex + 1],
+        samples: Array.from({ length: this.nativePage.samplesPerPixel }, (_, channel) => channel),
+        width: outputHeight, height: 1, interleave: true, resampleMethod: "nearest", signal,
+      });
+      const bytes = DTYPE_BYTES[this.metadata.dtype];
+      const raw = new Uint8Array(raster.buffer, raster.byteOffset, raster.byteLength);
+      const output = new Uint8Array(outputWidth * outputHeight * bytes);
+      for (let y = 0; y < outputHeight; y += 1) {
+        for (let x = 0; x < outputWidth; x += 1) {
+          const offset = (y * this.nativePage.samplesPerPixel + sourceX + x * step) * bytes;
+          output.set(raw.subarray(offset, offset + bytes), (y * outputWidth + x) * bytes);
+        }
+      }
+      return output.buffer;
+    }
     const image = await this.getCompatibleImage(sliceIndex, signal);
     const sourceRight = Math.min(this.metadata.width, sourceX + (outputWidth - 1) * step + 1);
     const sourceBottom = Math.min(this.metadata.height, sourceY + (outputHeight - 1) * step + 1);
@@ -115,7 +146,7 @@ export class TiffImageDataSource extends BaseImageDataSource {
     try {
       raster = await image.readRasters({
         window: [sourceX, sourceY, sourceRight, sourceBottom],
-        samples: [0],
+        samples: Array.from({ length: this.metadata.channelCount ?? 1 }, (_, channel) => channel),
         width: outputWidth,
         height: outputHeight,
         resampleMethod: "nearest",
@@ -141,10 +172,11 @@ export class TiffImageDataSource extends BaseImageDataSource {
       this.assertOpen();
       const page = describePage(image);
       if (
-        page.width !== this.metadata.width ||
-        page.height !== this.metadata.height ||
+        page.width !== this.nativePage.width ||
+        page.height !== this.nativePage.height ||
         page.dtype !== this.metadata.dtype ||
-        page.samplesPerPixel !== 1
+        page.samplesPerPixel !== this.nativePage.samplesPerPixel ||
+        page.alphaMode !== this.nativePage.alphaMode
       ) {
         throw new Error(
           `TIFF page ${index + 1} is incompatible with the first page and cannot be used in this stack.`,
@@ -172,9 +204,10 @@ export class TiffImageDataSource extends BaseImageDataSource {
 
 function describePage(image: GeoTIFFImage): TiffPageDescription {
   const samplesPerPixel = image.getSamplesPerPixel();
-  if (samplesPerPixel !== 1) {
+  const photometric = image.getFileDirectory().getValue("PhotometricInterpretation");
+  if (samplesPerPixel !== 1 && !((samplesPerPixel === 3 || samplesPerPixel === 4) && photometric === 2)) {
     throw new Error(
-      `Unsupported TIFF sample layout: expected one grayscale sample per pixel, found ${samplesPerPixel}.`,
+      `Unsupported TIFF sample layout: expected grayscale, RGB, or RGBA samples, found ${samplesPerPixel}.`,
     );
   }
   const bits = image.getBitsPerSample(0);
@@ -183,10 +216,17 @@ function describePage(image: GeoTIFFImage): TiffPageDescription {
   if (!dtype) {
     throw new Error(`Unsupported TIFF sample type: SampleFormat=${format}, BitsPerSample=${bits}.`);
   }
+  for (let channel = 1; channel < samplesPerPixel; channel += 1) {
+    if (image.getBitsPerSample(channel) !== bits || image.getSampleFormat(channel) !== format) {
+      throw new Error("Unsupported TIFF sample layout: all color channels must have the same sample type.");
+    }
+  }
   return {
     width: image.getWidth(),
     height: image.getHeight(),
     dtype,
     samplesPerPixel,
+    alphaMode: samplesPerPixel === 4 && image.getFileDirectory().getValue("ExtraSamples")?.[0] === 1
+      ? "associated" : "straight",
   };
 }

@@ -79,9 +79,11 @@ Histograms are calculated automatically only when the active scope—the current
 
 ## Supported data and limitations
 
-NPY arrays are scalar scientific data; dimensions of size 3 or 4 are not inferred as RGB/RGBA. Scalars show their value, 1D arrays and arrays above 3D show an explicit dimensionality message, and `[slice, y, x]` is used for 3D stacks. Object and variable-length dtypes are rejected.
+NPY supports scalar images shaped `[y, x]` and stacks shaped `[slice, y, x]`. When an array has at least three dimensions and its last dimension has size 3 or 4, ArrayScope asks whether to interpret that dimension as RGB/RGBA channels. Accepting displays `[y, x, channels]` as a color image; additional leading dimensions are flattened in logical C order into navigable slices, including for Fortran-order files. Choosing **Keep dimensions** (or dismissing the prompt) preserves the scalar interpretation. Scalars show their value; empty arrays, 1D arrays, and scalar arrays above 3D show an explicit dimensionality message. Color interpretation requires real-valued samples. Object and variable-length dtypes are rejected.
 
-TIFF support is limited to grayscale images. Pages must match the first page's dimensions and sample type to participate in a stack. Available compression formats depend on the bundled TIFF decoder.
+TIFF supports grayscale and RGB/RGBA pages (RGB photometric interpretation, with three or four samples per pixel). RGB/RGBA TIFFs also ask whether to interpret the last dimension as channels. Keeping dimensions treats a single `[y, x, channels]` page as a scalar stack; multipage color TIFFs require channel interpretation to display. Pages must match the first page's dimensions, sample type, and channel count to participate in a stack. All color channels must share a sample type. Available compression formats depend on the bundled TIFF decoder.
+
+Color tiles preserve the original channel values. The sampler shows RGB/RGBA values and luminance; histograms, statistics, and line profiles use luminance `0.2126 R + 0.7152 G + 0.0722 B` in source units, excluding alpha. Color display bypasses colormaps and applies the dynamic range equally to RGB; integer samples initially use their positive dtype range, and floats use 0–1. RGBA alpha uses that dtype range independently of contrast. Associated (premultiplied) TIFF alpha is unpremultiplied for display; analysis and sampling retain the stored values. Reopen the file to choose its interpretation again.
 
 ## Development
 

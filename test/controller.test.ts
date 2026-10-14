@@ -419,3 +419,33 @@ const fullSliceHistogram: HistogramResult = {
   maximum: 100,
   approximate: false,
 };
+
+
+describe("color viewer state", () => {
+  const colorMetadata: ImageMetadata = {
+    ...metadata, shape: [2, 2, 4], width: 2, height: 2,
+    dtype: "uint8", channelCount: 4,
+  };
+  const settings = { localCacheMB: 32, tileSize: 256, automaticHistogramPixelLimit: 1000000 };
+
+  it("initializes color range without replacing a restored range", () => {
+    store.useViewerStore.setState({ ranges: {} });
+    store.useViewerStore.getState().setMetadata(colorMetadata, settings);
+    expect(store.useViewerStore.getState().ranges.scalar).toEqual([0, 255]);
+    store.useViewerStore.setState({ ranges: { scalar: [20, 180] } });
+    store.useViewerStore.getState().setMetadata(colorMetadata, settings);
+    expect(store.useViewerStore.getState().ranges.scalar).toEqual([20, 180]);
+    controller.resetDynamicRange();
+    expect(store.useViewerStore.getState().ranges.scalar).toEqual([0, 255]);
+  });
+
+  it("shows cached channel samples with their luminance", () => {
+    caches.tileCache.clear();
+    store.useViewerStore.setState({ metadata: colorMetadata });
+    caches.tileCache.set({ requestId: 1, generation: 1, sliceIndex: 0, level: 0,
+      x: 0, y: 0, width: 1, height: 1, dtype: "uint8", channelCount: 4,
+      data: new Uint8Array([255, 0, 0, 128]).buffer });
+    controller.samplePixel(0, 0);
+    expect(store.useViewerStore.getState().sample).toMatchObject({ channels: [255, 0, 0, 128], value: 54.213 });
+  });
+});

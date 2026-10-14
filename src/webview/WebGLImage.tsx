@@ -25,6 +25,8 @@ const FRAGMENT_SHADER = `#version 300 es
 precision highp float;
 uniform sampler2D uData;
 uniform bool uComplex;
+uniform bool uColor;
+uniform bool uOverlay;
 uniform int uMode;
 uniform int uColormap;
 uniform vec2 uRange;
@@ -52,7 +54,16 @@ vec3 palette(float t) {
 }
 
 void main() {
-  vec2 raw = texture(uData, vUv).rg;
+  vec4 texel = texture(uData, vUv);
+  if (uColor) {
+    vec3 color;
+    if (any(isnan(texel.rgb))) color = vec3(0.9, 0.1, 0.9);
+    else if (any(isinf(texel.rgb))) color = vec3(1.0, 0.85, 0.1);
+    else color = clamp((texel.rgb - uRange.x) / max(uRange.y - uRange.x, 1e-30), 0.0, 1.0);
+    outColor = uOverlay ? vec4(color, texel.a) : vec4(mix(vec3(0.08), color, texel.a), 1.0);
+    return;
+  }
+  vec2 raw = texel.rg;
   float value = raw.r;
   if (uComplex) {
     float magnitudeSquared = dot(raw, raw);
@@ -139,7 +150,7 @@ export function WebGLImage({
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const gl = canvas.getContext("webgl2", { alpha: source === "overlay", antialias: false });
+    const gl = canvas.getContext("webgl2", { alpha: source === "overlay", premultipliedAlpha: false, antialias: false });
     if (!gl) return;
     const program = createProgram(gl, VERTEX_SHADER, FRAGMENT_SHADER);
     const vertices = gl.createBuffer();
@@ -191,6 +202,8 @@ export function WebGLImage({
     uniform2f(gl, program, "uPan", state.panX, state.panY);
     uniform2f(gl, program, "uRange", state.range[0], state.range[1]);
     uniform1i(gl, program, "uComplex", metadata.isComplex ? 1 : 0);
+    uniform1i(gl, program, "uColor", metadata.channelCount ? 1 : 0);
+    uniform1i(gl, program, "uOverlay", source === "overlay" ? 1 : 0);
     uniform1i(
       gl,
       program,
@@ -238,7 +251,7 @@ export function WebGLImage({
       ref={canvasRef}
       className={source === "overlay" ? "image-canvas overlay-image-canvas" : "image-canvas"}
       style={source === "overlay" ? { opacity: (100 - state.transparency) / 100 } : undefined}
-      aria-label={`${mode} ${source} image canvas`}
+      aria-label={`${state.metadata?.channelCount ? state.metadata.channelCount === 4 ? "RGBA" : "RGB" : mode} ${source} image canvas`}
     />
   );
 }
@@ -256,11 +269,11 @@ function uploadTile(gl: WebGL2RenderingContext, tile: ImageTile, complex: boolea
   gl.texImage2D(
     gl.TEXTURE_2D,
     0,
-    complex ? gl.RG32F : gl.R32F,
+    tile.channelCount ? gl.RGBA32F : complex ? gl.RG32F : gl.R32F,
     tile.width,
     tile.height,
     0,
-    complex ? gl.RG : gl.RED,
+    tile.channelCount ? gl.RGBA : complex ? gl.RG : gl.RED,
     gl.FLOAT,
     values,
   );
