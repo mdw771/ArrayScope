@@ -1,9 +1,12 @@
+import { applyPixelTransforms, isPixelTransform, MAX_PIXEL_TRANSFORMS } from "../shared/pixelTransforms";
+import { transformPixel } from "../host/numeric";
 import { colorRange } from "../shared/color";
 import type {
   ComplexDisplayMode,
   HostToWebviewMessage,
   ImageTileRequest,
   MenuAction,
+  PixelTransform,
   SamplePixelResult,
   Selection,
   ViewerCommand,
@@ -110,6 +113,7 @@ function handleHostMessage(message: HostToWebviewMessage): void {
       pendingTileKeys.delete(pendingTiles.get(message.tile.requestId) ?? "");
       pendingTiles.delete(message.tile.requestId);
       tileCache.set(message.tile);
+      if (message.tile.sliceIndex === state.currentSlice && state.transforms.length) initializeTransformRanges();
       if (Math.abs(message.tile.sliceIndex - state.currentSlice) <= 1) state.bumpTiles();
       break;
     case "tile":
@@ -227,6 +231,7 @@ function requestCurrentHistogram(): void {
       sliceIndex: state.currentSlice,
       selection,
       complexMode: state.metadata.isComplex ? state.complexMode : undefined,
+      transforms: state.transforms,
       binCount: 512,
       approximateAllowed: true,
     },
@@ -246,6 +251,7 @@ export function requestStatistics(): void {
       sliceIndex: state.currentSlice,
       selection,
       complexMode: state.metadata.isComplex ? state.complexMode : undefined,
+      transforms: state.transforms,
     },
   });
 }
@@ -266,8 +272,47 @@ export function requestLineProfile(): void {
       requestId: latestLineProfileRequest,
       sliceIndex: state.currentSlice,
       line: state.selection,
+      transforms: state.transforms,
     },
   });
+}
+
+export function applyTransform(transform: PixelTransform): void {
+  const state = useViewerStore.getState();
+  if (!state.metadata || !isPixelTransform(transform)) return;
+  if (state.transforms.length >= MAX_PIXEL_TRANSFORMS) {
+    state.setError({ message: `At most ${MAX_PIXEL_TRANSFORMS} transforms can be applied. Reset transforms to start again.` });
+    return;
+  }
+  updateTransforms([...state.transforms, transform]);
+}
+
+export function resetTransforms(): void {
+  updateTransforms([]);
+}
+
+function updateTransforms(transforms: PixelTransform[]): void {
+  // Invalidate every analysis response before changing the displayed values.
+  latestHistogramRequest = nextRequestId();
+  latestStatisticsRequest = nextRequestId();
+  latestSampleRequest = nextRequestId();
+  latestLineProfileRequest = nextRequestId();
+  useViewerStore.getState().setTransforms(transforms);
+  initializeTransformRanges();
+  requestAutomaticHistogram();
+}
+
+function initializeTransformRanges(): void {
+  const state = useViewerStore.getState();
+  const tile = tileCache.values(state.currentSlice).sort((a, b) => b.level - a.level)[0];
+  if (!tile) return;
+  const modes: Array<ComplexDisplayMode | "scalar"> = state.metadata?.isComplex
+    ? ["magnitude", "phase", "real", "imaginary", "logMagnitude", "magnitudeSquared"] : ["scalar"];
+  for (const mode of modes) {
+    if (state.ranges[mode]) continue;
+    const range = tileDisplayRange(tile, mode, state.transforms);
+    if (range) state.setRange(mode, stableRange(...range));
+  }
 }
 
 export function requestMenuAction(action: MenuAction): void {
@@ -304,7 +349,7 @@ export function autoContrast(): void {
 
 export function resetDynamicRange(): void {
   const state = useViewerStore.getState();
-  if (state.metadata?.channelCount) {
+  if (state.metadata?.channelCount && !state.transforms.length) {
     state.setAutoContrastPending(false);
     state.setResetRangePending(false);
     state.setRange("scalar", colorRange(state.metadata.dtype));
@@ -335,7 +380,7 @@ export function samplePixel(x: number, y: number): void {
   const tile = tileCache.findExactPixel(state.currentSlice, pixelX, pixelY);
   latestSampleRequest = nextRequestId();
   if (tile) {
-    const decoded = sampleTile(tile, pixelX, pixelY);
+    const decoded = transformPixel(sampleTile(tile, pixelX, pixelY), state.transforms, metadata);
     let result: SamplePixelResult;
     if (decoded.scalar !== undefined) {
       result = {
@@ -356,8 +401,8 @@ export function samplePixel(x: number, y: number): void {
         y: pixelY,
         real,
         imaginary,
-        magnitude: Math.hypot(real, imaginary),
-        phase: Math.atan2(imaginary, real),
+        magnitude: applyPixelTransforms(Math.hypot(real, imaginary), state.transforms),
+        phase: applyPixelTransforms(Math.atan2(imaginary, real), state.transforms),
       };
     }
     state.setSample(result);
@@ -371,6 +416,7 @@ export function samplePixel(x: number, y: number): void {
       sliceIndex: state.currentSlice,
       x: pixelX,
       y: pixelY,
+      transforms: state.transforms,
     },
   });
 }

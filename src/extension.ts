@@ -1,3 +1,4 @@
+import { isPixelTransformList } from "./shared/pixelTransforms";
 import * as vscode from "vscode";
 import type {
   HostToWebviewMessage,
@@ -530,6 +531,7 @@ function isWebviewMessage(value: unknown): value is WebviewToHostMessage {
       return isRecord(value.request) &&
         integer(value.request.requestId) &&
         integer(value.request.sliceIndex) &&
+        (value.request.transforms === undefined || isPixelTransformList(value.request.transforms)) &&
         finiteNumber(value.request.binCount) &&
         typeof value.request.approximateAllowed === "boolean" &&
         optionalSelection(value.request.selection) &&
@@ -538,12 +540,14 @@ function isWebviewMessage(value: unknown): value is WebviewToHostMessage {
       return isRecord(value.request) &&
         integer(value.request.requestId) &&
         integer(value.request.sliceIndex) &&
+        (value.request.transforms === undefined || isPixelTransformList(value.request.transforms)) &&
         optionalSelection(value.request.selection) &&
         optionalComplexMode(value.request.complexMode);
     case "computeLineProfile":
       return isRecord(value.request) &&
         integer(value.request.requestId) &&
         integer(value.request.sliceIndex) &&
+        (value.request.transforms === undefined || isPixelTransformList(value.request.transforms)) &&
         isRecord(value.request.line) &&
         value.request.line.type === "line" &&
         finiteNumbers(value.request.line, ["x0", "y0", "x1", "y1", "widthPixels"]);
@@ -551,6 +555,7 @@ function isWebviewMessage(value: unknown): value is WebviewToHostMessage {
       return isRecord(value.request) &&
         integer(value.request.requestId) &&
         integer(value.request.sliceIndex) &&
+        (value.request.transforms === undefined || isPixelTransformList(value.request.transforms)) &&
         finiteNumber(value.request.x) &&
         finiteNumber(value.request.y);
     default:

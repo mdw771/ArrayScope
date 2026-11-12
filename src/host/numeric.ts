@@ -1,6 +1,8 @@
-import { DTYPE_BYTES, type ComplexDisplayMode, type NumericDType } from "../shared/types";
-import { luminance } from "../shared/color";
+import { DTYPE_BYTES, type ComplexDisplayMode, type NumericDType, type PixelTransform, type ImageMetadata } from "../shared/types";
+import { colorRange, luminance } from "../shared/color";
 import { transformComplex } from "../shared/transform";
+
+import { applyPixelTransforms } from "../shared/pixelTransforms";
 
 export interface DecodedValue {
   scalar?: number;
@@ -58,6 +60,26 @@ export function decodePixel(
   return { scalar: luminance(channels), channels };
 }
 
+/** Color operations use straight RGB values and leave alpha unchanged. */
+export function transformPixel(
+  decoded: DecodedValue,
+  transforms: readonly PixelTransform[] = [],
+  metadata?: Pick<ImageMetadata, "dtype" | "alphaMode">,
+): DecodedValue {
+  if (!transforms.length) return decoded;
+  if (decoded.channels) {
+    const alpha = decoded.channels.length === 4
+      ? decoded.channels[3]! / colorRange(metadata?.dtype ?? "float32")[1] : 1;
+    const channels = decoded.channels.map((value, index) => index === 3 ? value : applyPixelTransforms(
+      metadata?.alphaMode === "associated" ? (alpha > 0 ? value / alpha : 0) : value,
+      transforms,
+    ));
+    return { scalar: luminance(channels), channels };
+  }
+  if (decoded.scalar !== undefined) return { scalar: applyPixelTransforms(decoded.scalar, transforms) };
+  return decoded;
+}
+
 export function transformedValue(
   decoded: DecodedValue,
   mode?: ComplexDisplayMode,
@@ -74,11 +96,15 @@ export function* decodeBuffer(
   dtype: NumericDType,
   mode?: ComplexDisplayMode,
   channelCount = 1,
+  transforms: readonly PixelTransform[] = [],
+  alphaMode?: ImageMetadata["alphaMode"],
 ): Generator<number> {
   const bytes = DTYPE_BYTES[dtype] * channelCount;
   const view = new DataView(data);
   for (let offset = 0; offset + bytes <= view.byteLength; offset += bytes) {
-    yield transformedValue(decodePixel(view, offset, dtype, channelCount), mode);
+    const decoded = transformPixel(decodePixel(view, offset, dtype, channelCount), transforms, { dtype, alphaMode });
+    const value = transformedValue(decoded, mode);
+    yield decoded.scalar !== undefined ? value : applyPixelTransforms(value, transforms);
   }
 }
 

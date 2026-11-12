@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.0
+
+- Added a Tools → Transform submenu with Log, Log10, Exp, Add, Subtract, Multiply, and Divide operations.
+- Added operand dialogs for arithmetic transforms, including finite-number validation and division-by-zero protection.
+- Applied transforms consistently to rendering, pixel samples, histograms, statistics, and line profiles while preserving the source file.
+- Added sequential transforms, Reset Transforms, and transform persistence across viewer sessions.
+
 ## 0.3.0
 
 - Added RGB/RGBA TIFF display, including transparency and color stacks.

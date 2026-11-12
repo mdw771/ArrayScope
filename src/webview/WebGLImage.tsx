@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
-import type { ComplexDisplayMode, ImageTile } from "../shared/types";
+import type { ComplexDisplayMode, ImageTile, PixelTransform } from "../shared/types";
 import { DEFAULT_RANGE, useViewerStore } from "./store";
 import { overlayTileCache, tileCache, tileToFloatData } from "./tileCache";
 
@@ -84,6 +84,8 @@ void main() {
   outColor = vec4(palette(normalized), 1.0);
 }`;
 
+const NO_TRANSFORMS: PixelTransform[] = [];
+
 const MODE_INDEX: Record<ComplexDisplayMode, number> = {
   magnitude: 0,
   phase: 1,
@@ -108,6 +110,8 @@ const COLORMAP_INDEX: Record<string, number> = {
 interface TextureEntry {
   texture: WebGLTexture;
   tile: ImageTile;
+  mode: ComplexDisplayMode | "scalar";
+  transforms: readonly PixelTransform[];
 }
 
 export function WebGLImage({
@@ -132,6 +136,7 @@ export function WebGLImage({
     return {
       metadata,
       renderMode,
+      transforms: source === "overlay" ? NO_TRANSFORMS : viewer.transforms,
       slice: source === "overlay" ? overlay?.sliceIndex ?? 0 : viewer.currentSlice,
       zoom: viewer.zoom,
       panX: viewer.panX + (source === "overlay" ? (overlay?.offsetX ?? 0) * viewer.zoom : 0),
@@ -201,7 +206,7 @@ export function WebGLImage({
     uniform1f(gl, program, "uZoom", state.zoom);
     uniform2f(gl, program, "uPan", state.panX, state.panY);
     uniform2f(gl, program, "uRange", state.range[0], state.range[1]);
-    uniform1i(gl, program, "uComplex", metadata.isComplex ? 1 : 0);
+    uniform1i(gl, program, "uComplex", metadata.isComplex && !state.transforms.length ? 1 : 0);
     uniform1i(gl, program, "uColor", metadata.channelCount ? 1 : 0);
     uniform1i(gl, program, "uOverlay", source === "overlay" ? 1 : 0);
     uniform1i(
@@ -223,10 +228,10 @@ export function WebGLImage({
       const key = tileKey(tile);
       activeKeys.add(key);
       let entry = textures.get(key);
-      if (!entry || entry.tile.data !== tile.data) {
+      if (!entry || entry.tile.data !== tile.data || entry.transforms !== state.transforms || entry.mode !== state.renderMode) {
         if (entry) gl.deleteTexture(entry.texture);
-        const texture = uploadTile(gl, tile, metadata.isComplex);
-        entry = { texture, tile };
+        const texture = uploadTile(gl, tile, metadata.isComplex, state.renderMode, state.transforms);
+        entry = { texture, tile, mode: state.renderMode, transforms: state.transforms };
         textures.set(key, entry);
       }
       const factor = 2 ** tile.level;
@@ -256,7 +261,11 @@ export function WebGLImage({
   );
 }
 
-function uploadTile(gl: WebGL2RenderingContext, tile: ImageTile, complex: boolean): WebGLTexture {
+function uploadTile(
+  gl: WebGL2RenderingContext, tile: ImageTile, complex: boolean,
+  mode: ComplexDisplayMode | "scalar", transforms: readonly PixelTransform[],
+): WebGLTexture {
+  complex = complex && !transforms.length;
   const texture = gl.createTexture();
   if (!texture) throw new Error("WebGL could not allocate an image texture.");
   gl.bindTexture(gl.TEXTURE_2D, texture);
@@ -265,7 +274,7 @@ function uploadTile(gl: WebGL2RenderingContext, tile: ImageTile, complex: boolea
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  const values = tileToFloatData(tile);
+  const values = tileToFloatData(tile, mode, transforms);
   gl.texImage2D(
     gl.TEXTURE_2D,
     0,

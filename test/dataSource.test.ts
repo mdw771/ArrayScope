@@ -2,6 +2,49 @@ import { describe, expect, it } from "vitest";
 import { BaseImageDataSource } from "../src/host/baseDataSource";
 import type { ImageMetadata } from "../src/shared/types";
 
+describe("transformed analysis", () => {
+  it("uses transformed scalar values for samples, histogram, statistics, and profiles without changing source tiles", async () => {
+    const source = new MemoryDataSource([1, 10, 100], 3, 1);
+    const transforms = [{ operation: "log10" } as const, { operation: "add", operand: 2 } as const];
+    const request = { requestId: 1, sliceIndex: 0, transforms };
+    expect((await source.samplePixel({ ...request, x: 1, y: 0 })).value).toBe(3);
+    expect(await source.computeStatistics(request)).toMatchObject({ minimum: 2, maximum: 4, mean: 3 });
+    expect(await source.computeHistogram({ ...request, binCount: 3, approximateAllowed: false }))
+      .toMatchObject({ minimum: 2, maximum: 4, finiteCount: 3 });
+    const profile = await source.computeLineProfile({ ...request,
+      line: { type: "line", x0: 0.5, y0: 0, x1: 1.5, y1: 0, widthPixels: 1 },
+    });
+    expect(profile.values).toEqual([2.5, 3.5]);
+    expect((await source.samplePixel({ requestId: 2, sliceIndex: 0, x: 1, y: 0 })).value).toBe(10);
+    await source.dispose();
+  });
+
+  it("counts invalid logarithms and zero correctly", async () => {
+    const source = new MemoryDataSource([-1, 0, 1, Math.E], 4, 1);
+    const request = { requestId: 1, sliceIndex: 0, transforms: [{ operation: "log" } as const] };
+    expect(await source.computeStatistics(request)).toMatchObject({
+      nanCount: 1, negativeInfinityCount: 1, finitePixelCount: 2, mean: 0.5,
+    });
+    expect(await source.computeHistogram({ ...request, binCount: 4, approximateAllowed: false }))
+      .toMatchObject({ nanCount: 1, negativeInfinityCount: 1, finiteCount: 2 });
+    await source.dispose();
+  });
+
+  it("transforms complex representations before profile interpolation", async () => {
+    const source = new ComplexMemoryDataSource([[3, 4], [0, 10]], 2, 1);
+    const request = { requestId: 1, sliceIndex: 0, transforms: [{ operation: "multiply", operand: 2 } as const] };
+    expect((await source.samplePixel({ ...request, x: 0, y: 0 })).magnitude).toBe(10);
+    expect(await source.computeStatistics({ ...request, complexMode: "real" }))
+      .toMatchObject({ minimum: 0, maximum: 6, mean: 3 });
+    const profile = await source.computeLineProfile({ ...request,
+      line: { type: "line", x0: 0, y0: 0, x1: 1, y1: 0, widthPixels: 1 },
+    });
+    expect(profile.magnitudes).toEqual([10, 20]);
+    expect(profile.phases?.[0]).toBeCloseTo(2 * Math.atan2(4, 3));
+    await source.dispose();
+  });
+});
+
 class MemoryDataSource extends BaseImageDataSource {
   constructor(readonly values: number[], width: number, height: number) {
     const metadata: ImageMetadata = {

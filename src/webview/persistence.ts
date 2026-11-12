@@ -1,3 +1,4 @@
+import { isPixelTransformList } from "../shared/pixelTransforms";
 import type {
   ComplexDisplayMode,
   Selection,
@@ -18,6 +19,7 @@ type PersistedStateFields = Pick<
   | "panY"
   | "colormap"
   | "complexMode"
+  | "transforms"
   | "ranges"
 >;
 
@@ -36,6 +38,7 @@ export function createPersistedViewerState(state: ViewerState): PersistedViewerS
     panY: state.panY,
     colormap: state.colormap,
     complexMode: state.complexMode,
+    transforms: state.transforms,
     ranges: state.ranges,
   };
 }
@@ -53,7 +56,8 @@ export function restorePersistedViewerState(value: unknown): PersistedStateField
     panY: finiteNumber(value.panY) ? value.panY : 0,
     colormap: typeof value.colormap === "string" ? value.colormap : "gray",
     complexMode: isComplexDisplayMode(value.complexMode) ? value.complexMode : "magnitude",
-    ranges: parseRanges(value.ranges),
+    transforms: isPixelTransformList(value.transforms) ? value.transforms : [],
+    ranges: value.transforms === undefined || isPixelTransformList(value.transforms) ? parseRanges(value.ranges) : {},
   };
 }
 
@@ -69,6 +73,7 @@ export function persistedViewerStateChanged(
     state.panY !== previousState.panY ||
     state.colormap !== previousState.colormap ||
     state.complexMode !== previousState.complexMode ||
+    state.transforms !== previousState.transforms ||
     state.ranges !== previousState.ranges;
 }
 

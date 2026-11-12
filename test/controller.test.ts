@@ -27,6 +27,7 @@ beforeEach(() => {
   store.useViewerStore.setState({
     metadata,
     currentSlice: 0,
+    transforms: [],
     selection: undefined,
     histogram: undefined,
     histogramStale: true,
@@ -95,6 +96,78 @@ describe("metadata restoration", () => {
       }
     },
   );
+});
+
+describe("pixel transform changes", () => {
+  it("sends composed transforms to analysis and updates exact cached samples", () => {
+    caches.tileCache.clear();
+    caches.tileCache.set({
+      requestId: 1, generation: 1, sliceIndex: 0, level: 0,
+      x: 0, y: 0, width: 2, height: 1, dtype: "float64",
+      data: new Float64Array([10, 100]).buffer,
+    });
+    controller.applyTransform({ operation: "log10" });
+    controller.applyTransform({ operation: "multiply", operand: 3 });
+    controller.samplePixel(1, 0);
+    expect(store.useViewerStore.getState().sample?.value).toBe(6);
+    controller.requestStatistics();
+    expect(posted.at(-1)).toMatchObject({ type: "computeStatistics", request: { transforms: [
+      { operation: "log10" }, { operation: "multiply", operand: 3 },
+    ] } });
+    controller.resetTransforms();
+    controller.samplePixel(1, 0);
+    expect(store.useViewerStore.getState().sample?.value).toBe(100);
+    expect(store.useViewerStore.getState().transforms).toEqual([]);
+    caches.tileCache.clear();
+  });
+
+  it("rejects pending analysis responses from before a transform change", () => {
+    let listener: ((event: MessageEvent) => void) | undefined;
+    vi.stubGlobal("window", {
+      addEventListener: (type: string, callback: (event: MessageEvent) => void) => {
+        if (type === "message") listener = callback;
+      },
+      removeEventListener: () => undefined,
+    });
+    const dispose = controller.initializeController();
+    try {
+      controller.requestStatistics();
+      const oldStatistics = posted.at(-1);
+      controller.samplePixel(0, 0);
+      const oldSample = posted.at(-1);
+      store.useViewerStore.getState().setSelection({ type: "line", x0: 0, y0: 0, x1: 1, y1: 0, widthPixels: 1 });
+      controller.requestLineProfile();
+      const oldProfile = posted.at(-1);
+      controller.requestHistogram();
+      const oldHistogram = posted.at(-1);
+      controller.applyTransform({ operation: "add", operand: 10 });
+      for (const [message, type] of [
+        [oldStatistics, "statistics"], [oldSample, "sample"],
+        [oldProfile, "lineProfile"], [oldHistogram, "histogram"],
+      ] as const) {
+        if (message && "request" in message) listener?.({ data: { type, result: message.request } } as MessageEvent);
+      }
+      const state = store.useViewerStore.getState();
+      expect(state.statistics).toBeUndefined();
+      expect(state.sample).toBeUndefined();
+      expect(state.lineProfile).toBeUndefined();
+      expect(state.histogram).toBeUndefined();
+    } finally {
+      dispose();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("initializes transformed ranges from cached tiles when automatic histograms are disabled", () => {
+    caches.tileCache.clear();
+    caches.tileCache.set({ requestId: 1, generation: 1, sliceIndex: 0, level: 0,
+      x: 0, y: 0, width: 2, height: 1, dtype: "float64", data: new Float64Array([1, 100]).buffer });
+    store.useViewerStore.setState({ settings: { ...store.useViewerStore.getState().settings, automaticHistogramPixelLimit: 0 } });
+    controller.applyTransform({ operation: "log10" });
+    expect(store.useViewerStore.getState().ranges.scalar).toEqual([0, 2]);
+    expect(posted.some((message) => message.type === "computeHistogram")).toBe(false);
+    caches.tileCache.clear();
+  });
 });
 
 describe("no-selection analysis behavior", () => {

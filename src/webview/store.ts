@@ -5,6 +5,7 @@ import type {
   HistogramResult,
   ImageMetadata,
   LineProfileResult,
+  PixelTransform,
   SamplePixelResult,
   Selection,
   StatisticsResult,
@@ -51,6 +52,7 @@ export interface ViewerState {
   viewportHeight: number;
   colormap: string;
   complexMode: ComplexDisplayMode;
+  transforms: PixelTransform[];
   ranges: Partial<Record<ComplexDisplayMode | "scalar", [number, number]>>;
   histogram?: HistogramResult;
   histogramStale: boolean;
@@ -81,6 +83,7 @@ export interface ViewerState {
   setViewport(width: number, height: number): void;
   setColormap(colormap: string): void;
   setComplexMode(mode: ComplexDisplayMode): void;
+  setTransforms(transforms: PixelTransform[]): void;
   setRange(mode: ComplexDisplayMode | "scalar", range: [number, number]): void;
   setHistogram(histogram: HistogramResult): void;
   setStatistics(statistics: StatisticsResult): void;
@@ -108,6 +111,7 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
   viewportHeight: 0,
   colormap: "gray",
   complexMode: "magnitude",
+  transforms: [],
   ranges: { phase: [-Math.PI, Math.PI] },
   histogramStale: true,
   statisticsStale: false,
@@ -171,6 +175,13 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
   setColormap: (colormap) => set({ colormap }),
   setComplexMode: (complexMode) =>
     set({ complexMode, histogramStale: true, statisticsStale: Boolean(get().statistics) }),
+  setTransforms: (transforms) => set({
+    transforms, ranges: {}, histogram: undefined, histogramStale: true,
+    statistics: undefined, statisticsStale: false, calculationPending: undefined,
+    sample: undefined, sampleLoading: undefined,
+    lineProfile: undefined, lineProfilePending: false, lineProfileOpen: false,
+    autoContrastPending: false, resetRangePending: false,
+  }),
   setRange: (mode, range) => set((state) => ({ ranges: { ...state.ranges, [mode]: range } })),
   setHistogram: (histogram) => {
     const mode = get().metadata?.isComplex ? get().complexMode : "scalar";

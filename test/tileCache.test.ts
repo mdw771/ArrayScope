@@ -1,6 +1,35 @@
 import { describe, expect, it } from "vitest";
 import type { ImageTile } from "../src/shared/types";
-import { LocalTileCache } from "../src/webview/tileCache";
+import { LocalTileCache, tileToFloatData, tileDisplayRange } from "../src/webview/tileCache";
+
+describe("transformed rendering data", () => {
+  it("transforms float64 before converting to GPU floats", () => {
+    const input = { ...tile({ width: 2, height: 1 }), dtype: "float64" as const,
+      data: new Float64Array([1e100, 1e200]).buffer };
+    const transforms = [{ operation: "log10" } as const];
+    expect([...tileToFloatData(input, "scalar", transforms)]).toEqual([100, 200]);
+    expect(tileDisplayRange(input, "scalar", transforms)).toEqual([100, 200]);
+  });
+
+  it("uploads transformed complex representations as scalar textures", () => {
+    const input = { ...tile({ width: 1, height: 1 }), dtype: "complex128" as const,
+      data: new Float64Array([3, 4]).buffer };
+    const transforms = [{ operation: "add", operand: 2 } as const];
+    expect([...tileToFloatData(input, "magnitude", transforms)]).toEqual([7]);
+    expect([...tileToFloatData(input, "real", transforms)]).toEqual([5]);
+    expect([...tileToFloatData(input)]).toEqual([3, 4]);
+  });
+
+  it("transforms straight RGB channels and preserves associated alpha", () => {
+    const input = { ...tile({ width: 1, height: 1 }), channelCount: 4 as const,
+      alphaMode: "associated" as const, data: new Uint8Array([20, 40, 60, 85]).buffer };
+    const transforms = [{ operation: "add", operand: 2 } as const];
+    const values = tileToFloatData(input, "scalar", transforms);
+    expect([...values.slice(0, 3)]).toEqual([62, 122, 182]);
+    expect(values[3]).toBeCloseTo(1 / 3);
+    expect(tileDisplayRange(input, "scalar", transforms)).toEqual([62, 182]);
+  });
+});
 
 describe("local tile cache coverage", () => {
   it("releases all tiles when cleared", () => {

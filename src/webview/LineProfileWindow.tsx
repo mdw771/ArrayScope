@@ -38,6 +38,7 @@ function LineProfileChart({
 }: {
   profile: NonNullable<ReturnType<typeof useViewerStore.getState>["lineProfile"]>;
 }) {
+  const transformed = useViewerStore((state) => state.transforms.length > 0);
   const color = useViewerStore((state) => Boolean(state.metadata?.channelCount));
   const complex = profile.magnitudes !== undefined && profile.phases !== undefined;
   const right = complex ? 72 : 24;
@@ -45,8 +46,8 @@ function LineProfileChart({
   const plotHeight = SVG_HEIGHT - TOP - BOTTOM;
   const maximumDistance = Math.max(1, profile.distances.at(-1) ?? 0);
   const leftValues = complex ? profile.magnitudes! : profile.values ?? [];
-  const leftRange = valueRange(leftValues, complex);
-  const rightRange: readonly [number, number] = [-Math.PI, Math.PI];
+  const leftRange = valueRange(leftValues, complex && !transformed);
+  const rightRange: readonly [number, number] = transformed ? valueRange(profile.phases ?? [], false) : [-Math.PI, Math.PI];
   const xAt = (distance: number): number => LEFT + (distance / maximumDistance) * plotWidth;
   const yAt = (value: number, range: readonly [number, number]): number =>
     TOP + ((range[1] - value) / (range[1] - range[0])) * plotHeight;
@@ -89,14 +90,14 @@ function LineProfileChart({
             const y = yAt(value, rightRange);
             return <text className="profile-tick profile-right-tick" key={`right-${value}`} x={LEFT + plotWidth + 8} y={y + 4}>{formatNumber(value)}</text>;
           })}
-          <path className="profile-series profile-right-series" d={seriesPath(profile.distances, profile.phases!, xAt, (value) => yAt(value, rightRange), Math.PI)} />
+          <path className="profile-series profile-right-series" d={seriesPath(profile.distances, profile.phases!, xAt, (value) => yAt(value, rightRange), transformed ? Number.POSITIVE_INFINITY : Math.PI)} />
           {pointCount <= 160 && profile.distances.map((distance, index) => {
             const value = profile.phases![index];
             return value !== undefined && Number.isFinite(value)
               ? <circle className="profile-point profile-right-point" key={`rp-${index}`} cx={xAt(distance)} cy={yAt(value, rightRange)} r={2.2} />
               : null;
           })}
-          <text className="profile-axis-label profile-right-label" transform={`translate(${SVG_WIDTH - 15} ${TOP + plotHeight / 2}) rotate(90)`}>Phase (rad)</text>
+          <text className="profile-axis-label profile-right-label" transform={`translate(${SVG_WIDTH - 15} ${TOP + plotHeight / 2}) rotate(90)`}>{transformed ? "Transformed phase" : "Phase (rad)"}</text>
         </>}
         <text className="profile-axis-label" transform={`translate(16 ${TOP + plotHeight / 2}) rotate(-90)`}>{complex ? "Magnitude" : color ? "Luminance" : "Pixel value"}</text>
         <text className="profile-axis-label" x={LEFT + plotWidth / 2} y={SVG_HEIGHT - 8} textAnchor="middle">Distance along line (pixels)</text>

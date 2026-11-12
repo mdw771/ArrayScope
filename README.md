@@ -29,6 +29,10 @@ The viewer never writes to the source. A selection scopes histogram, auto contra
 
 Complex images always show synchronized Magnitude and Phase panels. The **Analysis transform** selector controls which representation is used by the histogram, auto contrast, and statistics.
 
+Use **Tools → Transform** for pixel-wise **Log** (natural logarithm), **Log10**, **Exp**, **Add**, **Subtract**, **Multiply**, and **Divide** operations. Arithmetic operations open an operand dialog; the operand must be finite and division by zero is rejected. Operations apply in order across all slices and are restored with the viewer state. **Reset Transforms** returns to the original values. The source file is never modified.
+
+Rendering, pixel samples, histograms, statistics, and line profiles use the transformed values. For complex images, operations apply to each displayed or analyzed scalar representation; for RGB/RGBA images, they apply to straight RGB channels and preserve alpha. Logarithms of negative values produce NaN, logarithms of zero produce negative infinity, and exponential overflow produces positive infinity, using the viewer's existing non-finite indicators. Profiles interpolate the transformed pixels. Up to 64 operations can be applied before resetting.
+
 ## Keyboard shortcuts
 
 These shortcuts are active while an ArrayScope editor is active. They are disabled when a text input or terminal has focus, so they do not interfere with typing elsewhere in VS Code.

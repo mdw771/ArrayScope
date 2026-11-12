@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import type { MenuAction } from "../shared/types";
+import type { MenuAction, PixelTransform } from "../shared/types";
 import {
   autoContrast,
+  applyTransform,
+  resetTransforms,
   executeViewerCommand,
   requestHistogram,
   requestLineProfile,
@@ -9,6 +11,7 @@ import {
   requestStatistics,
   resetDynamicRange,
 } from "./controller";
+import { TransformOperandDialog } from "./TransformOperandDialog";
 import { useViewerStore } from "./store";
 
 type MenuName = "file" | "view" | "tools" | "help";
@@ -18,7 +21,8 @@ interface MenuItem {
   shortcut?: string;
   disabled?: boolean;
   separatorBefore?: boolean;
-  action(): void;
+  action?(): void;
+  items?: MenuItem[];
 }
 
 interface MenuDefinition {
@@ -31,8 +35,13 @@ const menuOrder: MenuName[] = ["file", "view", "tools", "help"];
 
 export function MenuBar() {
   const [openMenu, setOpenMenu] = useState<MenuName>();
+  const [transformMenuOpen, setTransformMenuOpen] = useState(false);
+  const [operandOperation, setOperandOperation] = useState<BinaryOperation>();
+  const transformTriggerRef = useRef<HTMLButtonElement>(null);
   const rootRef = useRef<HTMLElement>(null);
   const hasImage = useViewerStore((state) => Boolean(state.metadata));
+  const transformCount = useViewerStore((state) => state.transforms.length);
+  useEffect(() => { setTransformMenuOpen(false); }, [openMenu]);
 
   useEffect(() => {
     if (!openMenu) return;
@@ -115,6 +124,21 @@ export function MenuBar() {
           action: requestHistogram,
         },
         {
+          label: "Transform",
+          disabled: !hasImage,
+          separatorBefore: true,
+          items: [
+            { label: "Log", action: () => applyTransform({ operation: "log" }) },
+            { label: "Log10", action: () => applyTransform({ operation: "log10" }) },
+            { label: "Exp", action: () => applyTransform({ operation: "exp" }) },
+            ...(["add", "subtract", "multiply", "divide"] as const).map((operation) => ({
+              label: operationLabels[operation],
+              action: () => setOperandOperation(operation),
+            })),
+            { label: "Reset Transforms", disabled: transformCount === 0, separatorBefore: true, action: resetTransforms },
+          ],
+        },
+        {
           label: "Add overlay",
           disabled: !hasImage,
           separatorBefore: true,
@@ -152,7 +176,14 @@ export function MenuBar() {
     else focusTrigger(next);
   };
 
+  const closeMenus = (): void => {
+    setOpenMenu(undefined);
+    setTransformMenuOpen(false);
+    if (openMenu) focusTrigger(openMenu);
+  };
+
   return (
+    <>
     <nav ref={rootRef} className="menu-bar" role="menubar" aria-label="ArrayScope menu bar">
       {menus.map((menu) => (
         <div
@@ -192,20 +223,63 @@ export function MenuBar() {
               onKeyDown={(event) => handlePopupKeyDown(event, () => setOpenMenu(undefined))}
             >
               {menu.items.map((item) => (
-                <div key={item.label}>
+                <div
+                  key={item.label}
+                  className={item.items ? "menu-submenu-root" : undefined}
+                  onMouseEnter={() => setTransformMenuOpen(Boolean(item.items) && !item.disabled)}
+                >
                   {item.separatorBefore && <div className="menu-separator" role="separator" />}
                   <button
                     type="button"
                     role="menuitem"
+                    ref={item.items ? transformTriggerRef : undefined}
                     disabled={item.disabled}
+                    aria-haspopup={item.items ? "menu" : undefined}
+                    aria-expanded={item.items ? transformMenuOpen : undefined}
+                    onKeyDown={(event) => {
+                      if (item.items && event.key === "ArrowRight") {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setTransformMenuOpen(true);
+                        window.requestAnimationFrame(() => rootRef.current?.querySelector<HTMLButtonElement>(".transform-submenu button:not(:disabled)")?.focus());
+                      }
+                    }}
                     onClick={() => {
-                      setOpenMenu(undefined);
-                      item.action();
+                      if (item.items) {
+                        setTransformMenuOpen(true);
+                        return;
+                      }
+                      closeMenus();
+                      item.action?.();
                     }}
                   >
                     <span>{item.label}</span>
                     {item.shortcut && <span className="menu-shortcut">{item.shortcut}</span>}
+                    {item.items && <span aria-hidden="true">▸</span>}
                   </button>
+                  {item.items && transformMenuOpen && (
+                    <div
+                      className="menu-popup transform-submenu"
+                      role="menu"
+                      aria-label="Transform"
+                      onKeyDown={(event) => {
+                        event.stopPropagation();
+                        if (event.key === "ArrowLeft" || event.key === "Escape") {
+                          event.preventDefault();
+                          setTransformMenuOpen(false);
+                          transformTriggerRef.current?.focus();
+                        } else handlePopupKeyDown(event, closeMenus);
+                      }}
+                    >
+                      {item.items.map((child) => <div key={child.label}>
+                        {child.separatorBefore && <div className="menu-separator" role="separator" />}
+                        <button type="button" role="menuitem" disabled={child.disabled} onClick={() => {
+                          closeMenus();
+                          child.action?.();
+                        }}>{child.label}</button>
+                      </div>)}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -213,6 +287,11 @@ export function MenuBar() {
         </div>
       ))}
     </nav>
+    {operandOperation && <TransformOperandDialog operation={operandOperation} onClose={() => {
+      setOperandOperation(undefined);
+      window.requestAnimationFrame(() => focusTrigger("tools"));
+    }} />}
+    </>
   );
 }
 
@@ -226,7 +305,7 @@ function handlePopupKeyDown(
 ): void {
   const items = Array.from(
     event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)'),
-  );
+  ).filter((item) => item.closest('[role="menu"]') === event.currentTarget);
   const currentIndex = items.indexOf(document.activeElement as HTMLButtonElement);
   let nextIndex: number | undefined;
   if (event.key === "ArrowDown") nextIndex = (currentIndex + 1) % items.length;
@@ -238,3 +317,8 @@ function handlePopupKeyDown(
   event.preventDefault();
   items[nextIndex]?.focus();
 }
+
+type BinaryOperation = Extract<PixelTransform, { operand: number }>["operation"];
+const operationLabels: Record<BinaryOperation, string> = {
+  add: "Add", subtract: "Subtract", multiply: "Multiply", divide: "Divide",
+};

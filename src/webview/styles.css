@@ -378,3 +378,19 @@ input, select {
 @media (max-width: 480px) {
   .keyboard-shortcuts-content dl > div { grid-template-columns: 1fr; gap: 3px; padding: 7px 6px; }
 }
+
+.menu-submenu-root { position: relative; }
+.transform-submenu { top: -5px; left: calc(100% - 2px); }
+.transform-dialog {
+  width: min(360px, calc(100vw - 24px));
+  padding: 20px;
+  border: 1px solid var(--vscode-widget-border);
+  color: var(--vscode-foreground);
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  box-shadow: 0 4px 16px var(--vscode-widget-shadow);
+}
+.transform-dialog::backdrop { background: #0006; }
+.transform-dialog h2 { margin: 0 0 12px; font-size: 16px; }
+.transform-dialog label, .transform-dialog input { display: block; width: 100%; margin-top: 8px; }
+.transform-dialog [role="alert"] { color: var(--vscode-errorForeground); }
+.transform-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }

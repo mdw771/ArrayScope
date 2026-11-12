@@ -1,3 +1,4 @@
+import { applyPixelTransforms } from "../shared/pixelTransforms";
 import { SelectionRasterizer } from "../shared/geometry";
 import {
   DTYPE_BYTES,
@@ -15,7 +16,7 @@ import {
   type StatisticsResult,
 } from "../shared/types";
 import { ByteLruCache } from "./lru";
-import { decodeBuffer, decodePixel, decodeValue } from "./numeric";
+import { decodeBuffer, decodePixel, decodeValue, transformPixel } from "./numeric";
 
 interface RunningMoments {
   count: number;
@@ -176,7 +177,7 @@ export abstract class BaseImageDataSource implements ScientificImageDataSource {
     const data = await this.readRegion(request.sliceIndex, x, y, 1, 1, 1, signal);
     throwIfCancelled(signal);
     this.assertOpen();
-    const decoded = decodePixel(new DataView(data), 0, this.metadata.dtype, this.metadata.channelCount);
+    const decoded = transformPixel(decodePixel(new DataView(data), 0, this.metadata.dtype, this.metadata.channelCount), request.transforms, this.metadata);
     if (decoded.scalar !== undefined) {
       return { ...request, x, y, value: decoded.scalar, channels: decoded.channels };
     }
@@ -188,8 +189,8 @@ export abstract class BaseImageDataSource implements ScientificImageDataSource {
       y,
       real,
       imaginary,
-      magnitude: Math.hypot(real, imaginary),
-      phase: Math.atan2(imaginary, real),
+      magnitude: applyPixelTransforms(Math.hypot(real, imaginary), request.transforms),
+      phase: applyPixelTransforms(Math.atan2(imaginary, real), request.transforms),
     };
   }
 
@@ -250,10 +251,19 @@ export abstract class BaseImageDataSource implements ScientificImageDataSource {
         }
         const view = new DataView(data);
         for (let offset = 0; offset < pixelCount; offset += 1) {
-          decodedPixels.set(
-            `${start + offset},${y}`,
+          let decoded = transformPixel(
             decodePixel(view, offset * DTYPE_BYTES[this.metadata.dtype] * (this.metadata.channelCount ?? 1), this.metadata.dtype, this.metadata.channelCount),
+            request.transforms, this.metadata,
           );
+          // Transform individual pixels before profile interpolation. Keep the
+          // existing complex interpolation semantics when no operations are active.
+          if (this.metadata.isComplex && request.transforms?.length) {
+            decoded = {
+              real: applyPixelTransforms(Math.hypot(decoded.real!, decoded.imaginary!), request.transforms),
+              imaginary: applyPixelTransforms(Math.atan2(decoded.imaginary!, decoded.real!), request.transforms),
+            };
+          }
+          decodedPixels.set(`${start + offset},${y}`, decoded);
         }
         first = last + 1;
       }
@@ -265,8 +275,8 @@ export abstract class BaseImageDataSource implements ScientificImageDataSource {
       for (const point of points) {
         const real = bilinearComponent(point.x, point.y, decodedPixels, "real");
         const imaginary = bilinearComponent(point.x, point.y, decodedPixels, "imaginary");
-        magnitudes.push(Math.hypot(real, imaginary));
-        phases.push(Math.atan2(imaginary, real));
+        magnitudes.push(request.transforms?.length ? real : Math.hypot(real, imaginary));
+        phases.push(request.transforms?.length ? imaginary : Math.atan2(imaginary, real));
       }
       return { ...request, distances, magnitudes, phases };
     }
@@ -289,7 +299,7 @@ export abstract class BaseImageDataSource implements ScientificImageDataSource {
 
     await this.forEachSelectionRun(request.sliceIndex, request.selection, async (data, length) => {
       counts.geometric += length;
-      for (const value of decodeBuffer(data, this.metadata.dtype, request.complexMode, this.metadata.channelCount)) {
+      for (const value of decodeBuffer(data, this.metadata.dtype, request.complexMode, this.metadata.channelCount, request.transforms, this.metadata.alphaMode)) {
         if (Number.isNaN(value)) counts.nan += 1;
         else if (value === Number.POSITIVE_INFINITY) counts.positiveInfinity += 1;
         else if (value === Number.NEGATIVE_INFINITY) counts.negativeInfinity += 1;
@@ -340,7 +350,7 @@ export abstract class BaseImageDataSource implements ScientificImageDataSource {
     let maximum = Number.NEGATIVE_INFINITY;
 
     await this.forEachSelectionRun(request.sliceIndex, request.selection, async (data) => {
-      for (const value of decodeBuffer(data, this.metadata.dtype, request.complexMode, this.metadata.channelCount)) {
+      for (const value of decodeBuffer(data, this.metadata.dtype, request.complexMode, this.metadata.channelCount, request.transforms, this.metadata.alphaMode)) {
         if (Number.isNaN(value)) counts.nan += 1;
         else if (value === Number.POSITIVE_INFINITY) counts.positiveInfinity += 1;
         else if (value === Number.NEGATIVE_INFINITY) counts.negativeInfinity += 1;

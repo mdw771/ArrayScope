@@ -382,8 +382,8 @@ function SampleAnnotation({ sample }: { sample: NonNullable<ReturnType<typeof us
       <div>x: {sample.x}</div><div>y: {sample.y}</div><div>slice: {sample.sliceIndex + 1}</div>
       {sample.channels && <div>{sample.channels.length === 4 ? "RGBA" : "RGB"}: {sample.channels.map(formatValue).join(", ")}</div>}
       {sample.value !== undefined ? <div>{sample.channels ? "luminance" : "value"}: {formatValue(sample.value)}</div> : <>
-        <div>real: {formatValue(sample.real)}</div><div>imag: {formatValue(sample.imaginary)}</div>
-        <div>magnitude: {formatValue(sample.magnitude)}</div><div>phase: {formatValue(sample.phase)} rad</div>
+        {!state.transforms.length && <><div>real: {formatValue(sample.real)}</div><div>imag: {formatValue(sample.imaginary)}</div></>}
+        <div>magnitude: {formatValue(sample.magnitude)}</div><div>phase: {formatValue(sample.phase)}{state.transforms.length ? "" : " rad"}</div>
       </>}
     </div>
   );

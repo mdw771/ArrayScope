@@ -2,10 +2,11 @@ import {
   DTYPE_BYTES,
   type ComplexDisplayMode,
   type ImageTile,
-  type NumericDType,
+  type PixelTransform,
 } from "../shared/types";
 import { colorRange } from "../shared/color";
-import { decodePixel, decodeValue } from "../host/numeric";
+import { applyPixelTransforms } from "../shared/pixelTransforms";
+import { decodePixel, decodeValue, transformedValue, transformPixel } from "../host/numeric";
 
 function keyFor(tile: Pick<ImageTile, "sliceIndex" | "level" | "x" | "y" | "width" | "height">): string {
   return `${tile.sliceIndex}:${tile.level}:${tile.x}:${tile.y}:${tile.width}:${tile.height}`;
@@ -167,7 +168,11 @@ export function sampleTile(
   return decodePixel(new DataView(tile.data), offset, tile.dtype, tile.channelCount);
 }
 
-export function tileToFloatData(tile: ImageTile): Float32Array {
+export function tileToFloatData(
+  tile: ImageTile,
+  mode: ComplexDisplayMode | "scalar" = "scalar",
+  transforms: readonly PixelTransform[] = [],
+): Float32Array {
   if (tile.channelCount) {
     const output = new Float32Array(tile.width * tile.height * 4);
     const view = new DataView(tile.data);
@@ -179,19 +184,19 @@ export function tileToFloatData(tile: ImageTile): Float32Array {
         ? decodeValue(view, offset + 3 * bytes, tile.dtype, true).scalar! / alphaMaximum : 1;
       for (let channel = 0; channel < 3; channel += 1) {
         const value = decodeValue(view, offset + channel * bytes, tile.dtype, true).scalar!;
-        output[index * 4 + channel] = tile.alphaMode === "associated" ? (alpha > 0 ? value / alpha : 0) : value;
+        output[index * 4 + channel] = applyPixelTransforms(tile.alphaMode === "associated" ? (alpha > 0 ? value / alpha : 0) : value, transforms);
       }
       output[index * 4 + 3] = Number.isFinite(alpha) ? Math.max(0, Math.min(1, alpha)) : 0;
     }
     return output;
   }
-  const components = tile.dtype === "complex64" || tile.dtype === "complex128" ? 2 : 1;
+  const components = !transforms.length && (tile.dtype === "complex64" || tile.dtype === "complex128") ? 2 : 1;
   const output = new Float32Array(tile.width * tile.height * components);
   const view = new DataView(tile.data);
   const bytes = DTYPE_BYTES[tile.dtype];
   for (let index = 0; index < tile.width * tile.height; index += 1) {
-    const decoded = decodeValue(view, index * bytes, tile.dtype as NumericDType, true);
-    if (components === 1) output[index] = decoded.scalar ?? Number.NaN;
+    const decoded = decodeValue(view, index * bytes, tile.dtype, true);
+    if (components === 1) output[index] = applyPixelTransforms(transformedValue(decoded, mode === "scalar" ? undefined : mode), transforms);
     else {
       output[index * 2] = decoded.real ?? Number.NaN;
       output[index * 2 + 1] = decoded.imaginary ?? Number.NaN;
@@ -203,31 +208,23 @@ export function tileToFloatData(tile: ImageTile): Float32Array {
 export function tileDisplayRange(
   tile: ImageTile,
   mode: ComplexDisplayMode | "scalar",
+  transforms: readonly PixelTransform[] = [],
 ): [number, number] | undefined {
-  if (tile.channelCount) return colorRange(tile.dtype);
+  if (tile.channelCount && !transforms.length) return colorRange(tile.dtype);
   const view = new DataView(tile.data);
-  const bytes = DTYPE_BYTES[tile.dtype];
+  const bytes = DTYPE_BYTES[tile.dtype] * (tile.channelCount ?? 1);
   let minimum = Number.POSITIVE_INFINITY;
   let maximum = Number.NEGATIVE_INFINITY;
   for (let index = 0; index < tile.width * tile.height; index += 1) {
-    const decoded = decodeValue(view, index * bytes, tile.dtype as NumericDType, true);
-    let value = decoded.scalar;
-    if (value === undefined) {
-      const real = decoded.real ?? Number.NaN;
-      const imaginary = decoded.imaginary ?? Number.NaN;
-      const magnitudeSquared = real * real + imaginary * imaginary;
-      switch (mode) {
-        case "phase": value = Math.atan2(imaginary, real); break;
-        case "real": value = real; break;
-        case "imaginary": value = imaginary; break;
-        case "logMagnitude": value = Math.log1p(Math.sqrt(magnitudeSquared)); break;
-        case "magnitudeSquared": value = magnitudeSquared; break;
-        default: value = Math.sqrt(magnitudeSquared); break;
+    const decoded = transformPixel(decodePixel(view, index * bytes, tile.dtype, tile.channelCount), transforms, tile);
+    const values = decoded.channels?.slice(0, 3) ?? [decoded.scalar ?? applyPixelTransforms(
+      transformedValue(decoded, mode === "scalar" ? undefined : mode), transforms,
+    )];
+    for (const value of values) {
+      if (Number.isFinite(value)) {
+        minimum = Math.min(minimum, value);
+        maximum = Math.max(maximum, value);
       }
-    }
-    if (Number.isFinite(value)) {
-      minimum = Math.min(minimum, value);
-      maximum = Math.max(maximum, value);
     }
   }
   return minimum <= maximum ? [minimum, maximum] : undefined;

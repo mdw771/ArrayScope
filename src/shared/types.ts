@@ -19,6 +19,10 @@ export type ComplexDisplayMode =
   | "logMagnitude"
   | "magnitudeSquared";
 
+export type PixelTransform =
+  | { operation: "log" | "log10" | "exp" }
+  | { operation: "add" | "subtract" | "multiply" | "divide"; operand: number };
+
 export interface ImageMetadata {
   uri: string;
   fileName: string;
@@ -94,6 +98,7 @@ export interface ImageTile extends Omit<ImageTileRequest, "priority"> {
 }
 
 export interface HistogramRequest {
+  transforms?: PixelTransform[];
   requestId: number;
   sliceIndex: number;
   selection?: Selection;
@@ -121,6 +126,7 @@ export interface HistogramResult {
 }
 
 export interface StatisticsRequest {
+  transforms?: PixelTransform[];
   requestId: number;
   sliceIndex: number;
   selection?: Selection;
@@ -148,6 +154,7 @@ export interface StatisticsResult {
 }
 
 export interface SamplePixelRequest {
+  transforms?: PixelTransform[];
   requestId: number;
   sliceIndex: number;
   x: number;
@@ -168,6 +175,7 @@ export interface SamplePixelResult {
 }
 
 export interface LineProfileRequest {
+  transforms?: PixelTransform[];
   requestId: number;
   sliceIndex: number;
   line: LineSelection;

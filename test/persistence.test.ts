@@ -7,6 +7,14 @@ import {
 import { useViewerStore } from "../src/webview/store";
 
 describe("viewer state persistence", () => {
+  it("round-trips transform operands and rejects malformed persisted transforms", () => {
+    useViewerStore.setState({ transforms: [{ operation: "subtract", operand: 1.5 }] });
+    const persisted = createPersistedViewerState(useViewerStore.getState());
+    expect(restorePersistedViewerState(persisted)?.transforms).toEqual([{ operation: "subtract", operand: 1.5 }]);
+    expect(restorePersistedViewerState({ transforms: [{ operation: "divide", operand: 0 }], ranges: { scalar: [10, 20] } }))
+      .toMatchObject({ transforms: [], ranges: {} });
+    expect(restorePersistedViewerState({})?.transforms).toEqual([]);
+  });
   it("round-trips the current slice and display range", () => {
     useViewerStore.setState({
       currentSlice: 7,
